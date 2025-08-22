@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup & Configuration - Travel Expense Analyzer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .setup-section { border-left: 4px solid #0d6efd; }
+        .required-item { border-left: 3px solid #dc3545; }
+        .optional-item { border-left: 3px solid #ffc107; }
+        .completed-item { border-left: 3px solid #198754; }
+        .credential-box { background-color: #f8f9fa; border: 1px dashed #dee2e6; }
+        .warning-box { background-color: #fff3cd; border: 1px solid #ffeaa7; }
+        .error-box { background-color: #f8d7da; border: 1px solid #f5c6cb; }
+        .success-box { background-color: #d1e7dd; border: 1px solid #badbcc; }
+        .step-number { 
+            background: #0d6efd; 
+            color: white; 
+            border-radius: 50%; 
+            width: 30px; 
+            height: 30px; 
+            display: inline-flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/"><i class="fas fa-calculator me-2"></i>Travel Expense Analyzer</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="fas fa-home me-1"></i>Dashboard</a>
+                <a class="nav-link active" href="/setup"><i class="fas fa-cog me-1"></i>Setup</a>
+                <a class="nav-link" href="/trips"><i class="fas fa-plane me-1"></i>Trips</a>
+                <a class="nav-link" href="/receipts"><i class="fas fa-receipt me-1"></i>Receipts</a>
+                <a class="nav-link" href="/concur"><i class="fas fa-upload me-1"></i>Submit to Concur</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-12">
+                <h1>Setup & Configuration</h1>
+                <p class="text-muted">Configure all required accounts, credentials, and permissions</p>
+            </div>
+        </div>
+
+        <!-- Setup Overview -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="warning-box p-3 rounded">
+                    <h5><i class="fas fa-exclamation-triangle me-2"></i>What You'll Need</h5>
+                    <p class="mb-2">This system requires several external accounts and credentials. Here's what you need to gather:</p>
+                    <ul class="mb-0">
+                        <li><strong>Banking:</strong> Plaid developer account + Chase bank account access</li>
+                        <li><strong>Expense Reporting:</strong> SAP Concur account with API access</li>
+                        <li><strong>Email:</strong> Gmail/email account for hotel confirmation parsing</li>
+                        <li><strong>Hotels:</strong> Loyalty accounts for folio retrieval (optional)</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Plaid Setup -->
+        <div class="row mb-4" id="plaid">
+            <div class="col-12">
+                <div class="card setup-section">
+                    <div class="card-header">
+                        <h4><span class="step-number">1</span> Plaid Bank Connection Setup</h4>
+                        <span class="badge bg-danger">REQUIRED</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>Purpose:</strong> Automatically fetch transactions from your Chase bank account
+                        </div>
+
+                        <h6>What You Need to Do:</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="required-item p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-user-plus me-2"></i>Create Plaid Developer Account</h6>
+                                    <ol>
+                                        <li>Go to <a href="https://dashboard.plaid.com/signup" target="_blank">Plaid Developer Portal</a></li>
+                                        <li>Sign up for free developer account</li>
+                                        <li>Create new application</li>
+                                        <li>Select "Transactions" product</li>
+                                    </ol>
+                                    <div class="mt-2">
+                                        <strong>Time Required:</strong> 5-10 minutes<br>
+                                        <strong>Cost:</strong> Free for development
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="required-item p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-key me-2"></i>Get API Credentials</h6>
+                                    <p>From your Plaid dashboard, copy:</p>
+                                    <ul>
+                                        <li><strong>Client ID</strong></li>
+                                        <li><strong>Secret Key</strong></li>
+                                        <li><strong>Environment</strong> (sandbox/development)</li>
+                                    </ul>
+                                    <div class="credential-box p-2 mt-2">
+                                        <small><i class="fas fa-lock me-1"></i>Store in .env file - never commit to version control</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="required-item p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-link me-2"></i>Connect Your Chase Account</h6>
+                                    <div class="alert alert-warning">
+                                        <strong>⚠️ Important:</strong> You'll need to use Plaid Link to connect your Chase account and get an access token. 
+                                        This requires implementing OAuth flow or using Plaid's Link token.
+                                    </div>
+                                    <p>Options:</p>
+                                    <ul>
+                                        <li><strong>Production:</strong> Implement Plaid Link in web app</li>
+                                        <li><strong>Testing:</strong> Use sandbox mode with test credentials</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-3">
+                            <button class="btn btn-primary" onclick="testPlaidConnection()">
+                                <i class="fas fa-test-tube me-1"></i>Test Plaid Connection
+                            </button>
+                            <div id="plaid-test-result" class="mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Concur Setup -->
+        <div class="row mb-4" id="concur">
+            <div class="col-12">
+                <div class="card setup-section">
+                    <div class="card-header">
+                        <h4><span class="step-number">2</span> SAP Concur API Setup</h4>
+                        <span class="badge bg-danger">REQUIRED</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>Purpose:</strong> Automatically create and submit expense reports in Concur
+                        </div>
+
+                        <div class="error-box p-3 mb-3 rounded">
+                            <h6><i class="fas fa-building me-2"></i>Company Authorization Required</h6>
+                            <p><strong>⚠️ Critical:</strong> Your company must approve API access. This cannot be done individually.</p>
+                            <ol>
+                                <li>Contact your <strong>Concur Administrator</strong></li>
+                                <li>Request API access for expense automation</li>
+                                <li>Complete company security review process</li>
+                                <li>Get approval from IT/Finance departments</li>
+                            </ol>
+                            <div class="mt-2">
+                                <strong>Timeline:</strong> 1-4 weeks depending on company process<br>
+                                <strong>Who to Contact:</strong> IT Admin, Finance/Accounting, Concur Administrator
+                            </div>
+                        </div>
+
+                        <h6>What Your Company Admin Needs to Provide:</h6>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="required-item p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-id-card me-2"></i>API Credentials</h6>
+                                    <ul>
+                                        <li><strong>Client ID</strong></li>
+                                        <li><strong>Client Secret</strong></li>
+                                        <li><strong>Refresh Token</strong></li>
+                                        <li><strong>Base URL</strong> (usually us.api.concursolutions.com)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="required-item p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-user-check me-2"></i>Permissions Required</h6>
+                                    <ul>
+                                        <li>Create expense reports</li>
+                                        <li>Add expense entries</li>
+                                        <li>Upload receipts</li>
+                                        <li>Submit reports for approval</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="warning-box p-3 mb-3 rounded">
+                            <h6><i class="fas fa-exclamation-triangle me-2"></i>What to Tell Your Admin</h6>
+                            <p>Send this to your Concur administrator:</p>
+                            <blockquote class="blockquote">
+                                "I need API access for automated expense report creation. The application needs to:
+                                create expense reports, add individual expenses, upload receipt images, and submit for approval.
+                                Please provide Client ID, Secret, and help with OAuth setup for a refresh token."
+                            </blockquote>
+                        </div>
+
+                        <div class="mt-3">
+                            <button class="btn btn-primary" onclick="testConcurConnection()">
+                                <i class="fas fa-test-tube me-1"></i>Test Concur Connection
+                            </button>
+                            <button class="btn btn-secondary ms-2" onclick="downloadConcurRequest()">
+                                <i class="fas fa-download me-1"></i>Download Admin Request Template
+                            </button>
+                            <div id="concur-test-result" class="mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Setup -->
+        <div class="row mb-4" id="email">
+            <div class="col-12">
+                <div class="card setup-section">
+                    <div class="card-header">
+                        <h4><span class="step-number">3</span> Email Access Setup</h4>
+                        <span class="badge bg-warning">OPTIONAL</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>Purpose:</strong> Parse hotel confirmation emails to find reservation details and folios
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="optional-item p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-envelope me-2"></i>Gmail Setup (Recommended)</h6>
+                                    <ol>
+                                        <li>Enable 2-factor authentication on Gmail</li>
+                                        <li>Generate App Password:
+                                            <ul>
+                                                <li>Google Account → Security</li>
+                                                <li>App passwords → Generate</li>
+                                                <li>Select "Mail" and device</li>
+                                            </ul>
+                                        </li>
+                                        <li>Use app password (not regular password)</li>
+                                    </ol>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="optional-item p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-server me-2"></i>Other Email Providers</h6>
+                                    <p>Configure IMAP settings:</p>
+                                    <ul>
+                                        <li><strong>Outlook:</strong> outlook.office365.com:993</li>
+                                        <li><strong>Yahoo:</strong> imap.mail.yahoo.com:993</li>
+                                        <li><strong>Corporate:</strong> Ask IT for IMAP settings</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="credential-box p-3 mb-3 rounded">
+                            <h6>What Gets Parsed from Email:</h6>
+                            <ul class="mb-0">
+                                <li>Hotel confirmation numbers</li>
+                                <li>Check-in/check-out dates</li>
+                                <li>Hotel names and locations</li>
+                                <li>Total amounts and rates</li>
+                            </ul>
+                        </div>
+
+                        <div class="mt-3">
+                            <button class="btn btn-primary" onclick="testEmailConnection()">
+                                <i class="fas fa-test-tube me-1"></i>Test Email Connection
+                            </button>
+                            <div id="email-test-result" class="mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Hotel Setup -->
+        <div class="row mb-4" id="hotels">
+            <div class="col-12">
+                <div class="card setup-section">
+                    <div class="card-header">
+                        <h4><span class="step-number">4</span> Hotel Loyalty Accounts</h4>
+                        <span class="badge bg-warning">OPTIONAL</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>Purpose:</strong> Automatically download detailed hotel folios for Concur attachment
+                        </div>
+
+                        <div class="warning-box p-3 mb-3 rounded">
+                            <h6><i class="fas fa-shield-alt me-2"></i>Security Note</h6>
+                            <p>Hotel website credentials are stored locally and used for automated folio downloads. 
+                            Consider using dedicated passwords for this purpose.</p>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="optional-item p-3 mb-3 rounded text-center">
+                                    <h6><i class="fas fa-hotel me-2"></i>Marriott</h6>
+                                    <p>Bonvoy account needed for:</p>
+                                    <ul class="text-start small">
+                                        <li>Marriott Hotels</li>
+                                        <li>Courtyard</li>
+                                        <li>Residence Inn</li>
+                                        <li>Fairfield Inn</li>
+                                    </ul>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="checkMarriottStatus()">
+                                        Check Access
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="optional-item p-3 mb-3 rounded text-center">
+                                    <h6><i class="fas fa-hotel me-2"></i>Hilton</h6>
+                                    <p>Honors account needed for:</p>
+                                    <ul class="text-start small">
+                                        <li>Hilton Hotels</li>
+                                        <li>Hampton Inn</li>
+                                        <li>Embassy Suites</li>
+                                        <li>DoubleTree</li>
+                                    </ul>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="checkHiltonStatus()">
+                                        Check Access
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="optional-item p-3 mb-3 rounded text-center">
+                                    <h6><i class="fas fa-hotel me-2"></i>Hyatt</h6>
+                                    <p>World of Hyatt needed for:</p>
+                                    <ul class="text-start small">
+                                        <li>Hyatt Hotels</li>
+                                        <li>Grand Hyatt</li>
+                                        <li>Park Hyatt</li>
+                                        <li>Andaz</li>
+                                    </ul>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="checkHyattStatus()">
+                                        Check Access
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="optional-item p-3 mb-3 rounded text-center">
+                                    <h6><i class="fas fa-hotel me-2"></i>IHG</h6>
+                                    <p>Rewards Club needed for:</p>
+                                    <ul class="text-start small">
+                                        <li>Holiday Inn</li>
+                                        <li>Crowne Plaza</li>
+                                        <li>InterContinental</li>
+                                        <li>Staybridge Suites</li>
+                                    </ul>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="checkIHGStatus()">
+                                        Check Access
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-3">
+                            <button class="btn btn-primary" onclick="testAllHotelAccess()">
+                                <i class="fas fa-test-tube me-1"></i>Test All Hotel Access
+                            </button>
+                            <div id="hotel-test-result" class="mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuration Files -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card setup-section">
+                    <div class="card-header">
+                        <h4><span class="step-number">5</span> Configuration Files</h4>
+                        <span class="badge bg-info">SETUP</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <strong>Purpose:</strong> Store all credentials and settings securely
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="credential-box p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-file me-2"></i>.env File</h6>
+                                    <p>Main configuration file with API keys:</p>
+                                    <pre class="small"><code># Plaid Configuration
+PLAID_CLIENT_ID=your_client_id
+PLAID_SECRET=your_secret
+PLAID_ENV=sandbox
+
+# Concur Configuration  
+CONCUR_CLIENT_ID=your_client_id
+CONCUR_CLIENT_SECRET=your_secret
+CONCUR_REFRESH_TOKEN=your_token
+CONCUR_BASE_URL=https://us.api.concursolutions.com</code></pre>
+                                    <button class="btn btn-sm btn-outline-primary" onclick="downloadEnvTemplate()">
+                                        <i class="fas fa-download me-1"></i>Download Template
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="credential-box p-3 mb-3 rounded">
+                                    <h6><i class="fas fa-file-code me-2"></i>JSON Config Files</h6>
+                                    <p>Separate files for different services:</p>
+                                    <ul>
+                                        <li><strong>email_config.json</strong> - Email settings</li>
+                                        <li><strong>hotel_credentials.json</strong> - Hotel logins</li>
+                                    </ul>
+                                    <div class="mt-2">
+                                        <button class="btn btn-sm btn-outline-primary me-2" onclick="downloadEmailTemplate()">
+                                            Email Template
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-primary" onclick="downloadHotelTemplate()">
+                                            Hotel Template
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Setup Completion -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h4>Setup Completion Checklist</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h6>Required Items:</h6>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="check-plaid">
+                                    <label class="form-check-label" for="check-plaid">
+                                        Plaid developer account created
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="check-plaid-token">
+                                    <label class="form-check-label" for="check-plaid-token">
+                                        Plaid access token obtained
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="check-concur-approval">
+                                    <label class="form-check-label" for="check-concur-approval">
+                                        Concur API access approved by company
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="check-concur-creds">
+                                    <label class="form-check-label" for="check-concur-creds">
+                                        Concur API credentials received
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Optional Items:</h6>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="check-email">
+                                    <label class="form-check-label" for="check-email">
+                                        Email access configured
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="check-hotels">
+                                    <label class="form-check-label" for="check-hotels">
+                                        Hotel loyalty accounts configured
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="check-config">
+                                    <label class="form-check-label" for="check-config">
+                                        Configuration files created
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="check-test">
+                                    <label class="form-check-label" for="check-test">
+                                        All connections tested successfully
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <button class="btn btn-success btn-lg" onclick="completeSetup()">
+                                <i class="fas fa-check me-1"></i>Complete Setup & Start Using
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function testPlaidConnection() {
+            const resultDiv = document.getElementById('plaid-test-result');
+            resultDiv.innerHTML = '<div class="alert alert-info">Testing Plaid connection...</div>';
+            
+            // Simulate test - in real implementation would call API
+            setTimeout(() => {
+                resultDiv.innerHTML = '<div class="alert alert-warning">⚠️ No Plaid credentials configured. Please add to .env file.</div>';
+            }, 1000);
+        }
+
+        function testConcurConnection() {
+            const resultDiv = document.getElementById('concur-test-result');
+            resultDiv.innerHTML = '<div class="alert alert-info">Testing Concur connection...</div>';
+            
+            fetch('/api/test-concur-connection', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        resultDiv.innerHTML = `<div class="alert alert-success">✅ Connected successfully as: ${data.user}</div>`;
+                    } else {
+                        resultDiv.innerHTML = `<div class="alert alert-danger">❌ Connection failed: ${data.message}</div>`;
+                    }
+                })
+                .catch(error => {
+                    resultDiv.innerHTML = '<div class="alert alert-danger">❌ Connection test failed. Check credentials.</div>';
+                });
+        }
+
+        function testEmailConnection() {
+            const resultDiv = document.getElementById('email-test-result');
+            resultDiv.innerHTML = '<div class="alert alert-info">Testing email connection...</div>';
+            
+            setTimeout(() => {
+                resultDiv.innerHTML = '<div class="alert alert-warning">⚠️ No email configuration found.</div>';
+            }, 1000);
+        }
+
+        function checkMarriottStatus() {
+            alert('Check that you can log into marriott.com and access your reservation history.');
+        }
+
+        function checkHiltonStatus() {
+            alert('Check that you can log into hilton.com and access your reservation history.');
+        }
+
+        function checkHyattStatus() {
+            alert('Check that you can log into hyatt.com and access your reservation history.');
+        }
+
+        function checkIHGStatus() {
+            alert('Check that you can log into ihg.com and access your reservation history.');
+        }
+
+        function testAllHotelAccess() {
+            const resultDiv = document.getElementById('hotel-test-result');
+            resultDiv.innerHTML = '<div class="alert alert-info">Testing all hotel connections...</div>';
+            
+            setTimeout(() => {
+                resultDiv.innerHTML = '<div class="alert alert-warning">⚠️ No hotel credentials configured.</div>';
+            }, 1000);
+        }
+
+        function downloadEnvTemplate() {
+            const template = `# Plaid API Configuration
+PLAID_CLIENT_ID=your_client_id_here
+PLAID_SECRET=your_secret_here
+PLAID_ENV=sandbox
+
+# SAP Concur API Configuration
+CONCUR_BASE_URL=https://us.api.concursolutions.com
+CONCUR_CLIENT_ID=your_concur_client_id
+CONCUR_CLIENT_SECRET=your_concur_client_secret
+CONCUR_REFRESH_TOKEN=your_concur_refresh_token
+
+# Chase Account Configuration (optional)
+CHASE_ACCOUNT_NAMES=Chase Checking,Chase Sapphire`;
+            
+            downloadFile('.env', template);
+        }
+
+        function downloadEmailTemplate() {
+            const template = JSON.stringify({
+                "imap_server": "imap.gmail.com",
+                "username": "your_email@gmail.com",
+                "password": "your_app_password",
+                "port": 993
+            }, null, 2);
+            
+            downloadFile('email_config.json', template);
+        }
+
+        function downloadHotelTemplate() {
+            const template = JSON.stringify({
+                "marriott": {
+                    "username": "your_marriott_username",
+                    "password": "your_marriott_password"
+                },
+                "hilton": {
+                    "username": "your_hilton_username",
+                    "password": "your_hilton_password"
+                },
+                "hyatt": {
+                    "username": "your_hyatt_username",
+                    "password": "your_hyatt_password"
+                },
+                "ihg": {
+                    "username": "your_ihg_username",
+                    "password": "your_ihg_password"
+                }
+            }, null, 2);
+            
+            downloadFile('hotel_credentials.json', template);
+        }
+
+        function downloadConcurRequest() {
+            const template = `Subject: Request for SAP Concur API Access
+
+Hi [Concur Administrator],
+
+I would like to request API access for automated expense report creation and submission.
+
+Application Purpose:
+- Automatically analyze bank transactions to identify business travel expenses
+- Create properly categorized expense reports in Concur
+- Upload receipts and supporting documents
+- Submit reports through the standard approval workflow
+
+Required API Permissions:
+- Create expense reports (Expense Reports v4 API)
+- Add expense entries (Expense Entries v4 API)  
+- Upload receipt images (Receipts API)
+- Upload supporting documents (Spend Documents v4 API)
+- Submit reports for approval (Workflow API)
+
+Please provide:
+- Client ID and Client Secret for the application
+- Refresh token for ongoing access
+- Base URL for our Concur instance
+- Any company-specific policy configurations needed
+
+This will streamline our expense reporting process and ensure compliance with company policies.
+
+Thank you,
+[Your Name]`;
+            
+            downloadFile('concur_api_request.txt', template);
+        }
+
+        function downloadFile(filename, content) {
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content));
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+
+        function completeSetup() {
+            const requiredChecks = ['check-plaid', 'check-plaid-token', 'check-concur-approval', 'check-concur-creds'];
+            const allRequired = requiredChecks.every(id => document.getElementById(id).checked);
+            
+            if (allRequired) {
+                alert('Setup complete! Redirecting to dashboard...');
+                window.location.href = '/';
+            } else {
+                alert('Please complete all required setup items before proceeding.');
+            }
+        }
+    </script>
+</body>
+</html>

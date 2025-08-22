@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Receipts & Folios - Travel Expense Analyzer</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="/static/css/main.css" rel="stylesheet">
+    <style>
+        .receipt-card { transition: transform 0.2s; cursor: pointer; }
+        .receipt-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .receipt-thumbnail { width: 100px; height: 100px; object-fit: cover; border-radius: 8px; }
+        .drop-zone { 
+            border: 2px dashed #dee2e6; 
+            border-radius: 8px; 
+            padding: 40px; 
+            text-align: center; 
+            transition: all 0.3s;
+            background-color: #f8f9fa;
+        }
+        .drop-zone.dragover { 
+            border-color: #0d6efd; 
+            background-color: #e7f1ff; 
+        }
+        .receipt-viewer { max-height: 600px; overflow-y: auto; }
+        .folio-status { font-size: 0.8em; }
+        .missing-receipt { border: 2px dashed #ffc107; background-color: #fff3cd; }
+        .has-receipt { border: 2px solid #198754; background-color: #d1e7dd; }
+        .processing-receipt { border: 2px solid #0d6efd; background-color: #cff4fc; }
+        .receipt-actions { position: absolute; top: 5px; right: 5px; opacity: 0; transition: opacity 0.2s; }
+        .receipt-card:hover .receipt-actions { opacity: 1; }
+        .expense-match { background-color: #e7f1ff; border-left: 4px solid #0d6efd; }
+        .auto-retrieved { border-left: 4px solid #198754; }
+        .manual-upload { border-left: 4px solid #ffc107; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/"><i class="fas fa-calculator me-2"></i>Travel Expense Analyzer</a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="fas fa-home me-1"></i>Dashboard</a>
+                <a class="nav-link" href="/setup"><i class="fas fa-cog me-1"></i>Setup</a>
+                <a class="nav-link" href="/trips"><i class="fas fa-plane me-1"></i>Trips</a>
+                <a class="nav-link active" href="/receipts"><i class="fas fa-receipt me-1"></i>Receipts</a>
+                <a class="nav-link" href="/concur"><i class="fas fa-upload me-1"></i>Submit to Concur</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <h1>Receipt & Folio Management</h1>
+                <p class="text-muted">Upload, view, and organize receipts and hotel folios for expense reporting</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bulkUploadModal">
+                    <i class="fas fa-cloud-upload-alt me-1"></i>Bulk Upload
+                </button>
+                <button class="btn btn-success" onclick="retrieveAllFolios()">
+                    <i class="fas fa-download me-1"></i>Get Hotel Folios
+                </button>
+            </div>
+        </div>
+
+        <!-- Receipt Status Overview -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Receipt Status Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-md-3">
+                                <div class="border rounded p-3 has-receipt">
+                                    <h4 class="text-success" id="receipts-complete">0</h4>
+                                    <small>Complete with Receipts</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="border rounded p-3 missing-receipt">
+                                    <h4 class="text-warning" id="receipts-missing">0</h4>
+                                    <small>Missing Receipts</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="border rounded p-3 auto-retrieved">
+                                    <h4 class="text-info" id="folios-retrieved">0</h4>
+                                    <small>Auto-Retrieved Folios</small>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="border rounded p-3">
+                                    <h4 class="text-primary" id="total-attachments">0</h4>
+                                    <small>Total Attachments</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter and Search -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" id="receipt-search" 
+                           placeholder="Search receipts by vendor, amount, or description...">
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="d-flex gap-2">
+                    <select class="form-select" id="receipt-filter">
+                        <option value="all">All Receipts</option>
+                        <option value="missing">Missing Receipts</option>
+                        <option value="complete">Complete</option>
+                        <option value="hotels">Hotel Folios</option>
+                        <option value="manual">Manual Uploads</option>
+                    </select>
+                    <select class="form-select" id="trip-filter">
+                        <option value="all">All Trips</option>
+                        {% for trip in trips %}
+                        <option value="{{ trip.trip_number }}">{{ trip.primary_location }} - {{ trip.start_date }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trip-based Receipt Organization -->
+        {% for trip in trips %}
+        <div class="row mb-4 trip-section" data-trip="{{ trip.trip_number }}">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-map-marker-alt me-2"></i>{{ trip.primary_location }}
+                                </h5>
+                                <small class="text-muted">{{ trip.start_date }} to {{ trip.end_date }}</small>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <span class="badge bg-primary me-2">${{ "%.2f"|format(trip.total_amount) }}</span>
+                                <span class="badge bg-info" id="receipt-count-{{ trip.trip_number }}">0 receipts</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Quick Upload Zone for this trip -->
+                        <div class="drop-zone mb-3" 
+                             ondrop="dropHandler(event, {{ trip.trip_number }})" 
+                             ondragover="dragOverHandler(event)"
+                             ondragleave="dragLeaveHandler(event)">
+                            <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                            <p class="mb-2"><strong>Drop receipts here</strong> or click to upload</p>
+                            <p class="text-muted small">Supports: JPG, PNG, PDF (max 16MB)</p>
+                            <input type="file" class="d-none" id="file-upload-{{ trip.trip_number }}" 
+                                   multiple accept=".jpg,.jpeg,.png,.pdf" 
+                                   onchange="handleFileUpload(event, {{ trip.trip_number }})">
+                            <button class="btn btn-outline-primary" 
+                                    onclick="document.getElementById('file-upload-{{ trip.trip_number }}').click()">
+                                Choose Files
+                            </button>
+                        </div>
+
+                        <!-- Expense Items with Receipt Status -->
+                        <div class="row">
+                            {% for transaction in trip.transactions %}
+                            <div class="col-md-6 col-lg-4 mb-3">
+                                <div class="card receipt-card expense-item missing-receipt" 
+                                     data-trip="{{ trip.trip_number }}" 
+                                     data-transaction="{{ loop.index0 }}"
+                                     onclick="showReceiptModal({{ trip.trip_number }}, {{ loop.index0 }})">
+                                    
+                                    <div class="receipt-actions">
+                                        <button class="btn btn-sm btn-primary" 
+                                                onclick="event.stopPropagation(); uploadForExpense({{ trip.trip_number }}, {{ loop.index0 }})">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-info" 
+                                                onclick="event.stopPropagation(); viewExpenseReceipts({{ trip.trip_number }}, {{ loop.index0 }})">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-start">
+                                            <div class="receipt-thumbnail-container me-3">
+                                                <div class="receipt-placeholder">
+                                                    <i class="fas fa-receipt fa-2x text-muted"></i>
+                                                </div>
+                                            </div>
+                                            <div class="flex-grow-1">
+                                                <h6 class="card-title">{{ transaction.description[:30] }}{% if transaction.description|length > 30 %}...{% endif %}</h6>
+                                                <p class="card-text">
+                                                    <strong>${{ "%.2f"|format(transaction.amount) }}</strong><br>
+                                                    <small class="text-muted">{{ transaction.date.strftime('%m/%d/%Y') }}</small><br>
+                                                    <span class="badge bg-secondary">{{ transaction.category }}</span>
+                                                </p>
+                                                <div class="folio-status">
+                                                    <span class="text-warning">
+                                                        <i class="fas fa-exclamation-triangle"></i> No receipt
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Hotel Folios Section -->
+                        <div class="mt-4">
+                            <h6>Hotel Folios</h6>
+                            <div class="row" id="hotel-folios-{{ trip.trip_number }}">
+                                <div class="col-12">
+                                    <div class="alert alert-info">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        No hotel folios retrieved yet. 
+                                        <button class="btn btn-sm btn-outline-primary ms-2" 
+                                                onclick="retrieveFoliosForTrip({{ trip.trip_number }})">
+                                            <i class="fas fa-download me-1"></i>Try to Retrieve
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Unmatched Receipts -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Unmatched Receipts</h5>
+                        <small class="text-muted">Receipts that haven't been matched to specific expenses</small>
+                    </div>
+                    <div class="card-body">
+                        <div class="row" id="unmatched-receipts">
+                            <div class="col-12 text-center text-muted">
+                                <i class="fas fa-inbox fa-3x mb-3"></i>
+                                <p>No unmatched receipts</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receipt Viewer Modal -->
+    <div class="modal fade" id="receiptViewerModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Receipt Viewer</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="receipt-viewer text-center">
+                                <img id="receipt-image" src="" alt="Receipt" class="img-fluid" style="display: none;">
+                                <iframe id="receipt-pdf" src="" width="100%" height="600px" style="display: none;"></iframe>
+                                <div id="receipt-placeholder" class="p-5">
+                                    <i class="fas fa-receipt fa-4x text-muted mb-3"></i>
+                                    <p class="text-muted">No receipt attached</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="receipt-details">
+                                <h6>Expense Details</h6>
+                                <div id="expense-info"></div>
+                                
+                                <h6 class="mt-3">Receipt Actions</h6>
+                                <div class="d-grid gap-2">
+                                    <button class="btn btn-primary" onclick="uploadNewReceipt()">
+                                        <i class="fas fa-upload me-1"></i>Upload Receipt
+                                    </button>
+                                    <button class="btn btn-secondary" onclick="rotateReceipt()">
+                                        <i class="fas fa-undo me-1"></i>Rotate
+                                    </button>
+                                    <button class="btn btn-info" onclick="enhanceReceipt()">
+                                        <i class="fas fa-magic me-1"></i>Enhance Quality
+                                    </button>
+                                    <button class="btn btn-success" onclick="ocrReceipt()">
+                                        <i class="fas fa-text-width me-1"></i>Extract Text (OCR)
+                                    </button>
+                                    <button class="btn btn-warning" onclick="flagReceiptIssue()">
+                                        <i class="fas fa-flag me-1"></i>Flag Issue
+                                    </button>
+                                    <button class="btn btn-danger" onclick="deleteReceipt()">
+                                        <i class="fas fa-trash me-1"></i>Delete Receipt
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="saveReceiptChanges()">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Upload Modal -->
+    <div class="modal fade" id="bulkUploadModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Bulk Receipt Upload</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="drop-zone" id="bulk-drop-zone"
+                         ondrop="bulkDropHandler(event)" 
+                         ondragover="dragOverHandler(event)"
+                         ondragleave="dragLeaveHandler(event)">
+                        <i class="fas fa-cloud-upload-alt fa-4x text-muted mb-3"></i>
+                        <p class="mb-2"><strong>Drop multiple receipts here</strong> or click to select</p>
+                        <p class="text-muted">We'll try to automatically match them to expenses</p>
+                        <input type="file" class="d-none" id="bulk-file-upload" 
+                               multiple accept=".jpg,.jpeg,.png,.pdf" 
+                               onchange="handleBulkUpload(event)">
+                        <button class="btn btn-primary" 
+                                onclick="document.getElementById('bulk-file-upload').click()">
+                            Choose Files
+                        </button>
+                    </div>
+                    
+                    <div id="bulk-upload-progress" class="mt-4" style="display: none;">
+                        <div class="progress mb-3">
+                            <div class="progress-bar" id="bulk-progress-bar" role="progressbar" style="width: 0%"></div>
+                        </div>
+                        <div id="bulk-upload-status">Processing files...</div>
+                    </div>
+
+                    <div id="bulk-upload-results" class="mt-4" style="display: none;">
+                        <h6>Upload Results</h6>
+                        <div class="list-group" id="bulk-results-list"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-success" id="bulk-match-button" 
+                            onclick="autoMatchReceipts()" style="display: none;">
+                        <i class="fas fa-magic me-1"></i>Auto-Match to Expenses
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receipt Upload Input (Hidden) -->
+    <input type="file" id="hidden-file-input" style="display: none;" 
+           accept=".jpg,.jpeg,.png,.pdf" onchange="processReceiptUpload(event)">
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/receipts.js"></script>
+    <script>
+        let currentTrip = null;
+        let currentTransaction = null;
+        let uploadedFiles = [];
+
+        // Drag and Drop Handlers
+        function dragOverHandler(event) {
+            event.preventDefault();
+            event.currentTarget.classList.add('dragover');
+        }
+
+        function dragLeaveHandler(event) {
+            event.currentTarget.classList.remove('dragover');
+        }
+
+        function dropHandler(event, tripId = null) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('dragover');
+            
+            const files = event.dataTransfer.files;
+            if (tripId) {
+                handleFileUpload({target: {files: files}}, tripId);
+            } else {
+                handleBulkUpload({target: {files: files}});
+            }
+        }
+
+        function bulkDropHandler(event) {
+            dropHandler(event);
+        }
+
+        // File Upload Handlers
+        function handleFileUpload(event, tripId) {
+            const files = event.target.files;
+            uploadFilesForTrip(files, tripId);
+        }
+
+        function handleBulkUpload(event) {
+            const files = event.target.files;
+            document.getElementById('bulk-upload-progress').style.display = 'block';
+            uploadBulkFiles(files);
+        }
+
+        function uploadFilesForTrip(files, tripId) {
+            const formData = new FormData();
+            
+            for (let file of files) {
+                formData.append('files', file);
+            }
+            formData.append('trip_id', tripId);
+            
+            fetch('/api/upload-receipts', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                updateTripReceiptStatus(tripId, data.uploads);
+                showUploadSuccess(data.uploads.length);
+            })
+            .catch(error => {
+                showUploadError(error.message);
+            });
+        }
+
+        function uploadBulkFiles(files) {
+            const formData = new FormData();
+            
+            for (let file of files) {
+                formData.append('files', file);
+            }
+            
+            let progress = 0;
+            const progressBar = document.getElementById('bulk-progress-bar');
+            const statusDiv = document.getElementById('bulk-upload-status');
+            
+            // Simulate progress (in real implementation, use XMLHttpRequest for progress tracking)
+            const interval = setInterval(() => {
+                progress += Math.random() * 20;
+                if (progress > 90) progress = 90;
+                
+                progressBar.style.width = `${progress}%`;
+                statusDiv.textContent = `Uploading... ${Math.round(progress)}%`;
+            }, 500);
+            
+            fetch('/api/bulk-upload-receipts', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                clearInterval(interval);
+                progressBar.style.width = '100%';
+                statusDiv.textContent = 'Upload complete!';
+                
+                displayBulkResults(data.uploads);
+                document.getElementById('bulk-match-button').style.display = 'block';
+            })
+            .catch(error => {
+                clearInterval(interval);
+                statusDiv.textContent = `Upload failed: ${error.message}`;
+            });
+        }
+
+        // Receipt Management Functions
+        function showReceiptModal(tripId, transactionId) {
+            currentTrip = tripId;
+            currentTransaction = transactionId;
+            
+            // Load expense details
+            loadExpenseDetails(tripId, transactionId);
+            
+            // Load existing receipts
+            loadReceiptForExpense(tripId, transactionId);
+            
+            new bootstrap.Modal(document.getElementById('receiptViewerModal')).show();
+        }
+
+        function loadExpenseDetails(tripId, transactionId) {
+            fetch(`/api/trips/${tripId}/transactions/${transactionId}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('expense-info').innerHTML = `
+                        <p><strong>Vendor:</strong> ${data.description}</p>
+                        <p><strong>Amount:</strong> $${data.amount.toFixed(2)}</p>
+                        <p><strong>Date:</strong> ${data.date}</p>
+                        <p><strong>Category:</strong> ${data.category}</p>
+                        <p><strong>Location:</strong> ${data.location || 'N/A'}</p>
+                    `;
+                });
+        }
+
+        function loadReceiptForExpense(tripId, transactionId) {
+            fetch(`/api/receipts/${tripId}/${transactionId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.receipts && data.receipts.length > 0) {
+                        showReceipt(data.receipts[0]);
+                    } else {
+                        showNoReceipt();
+                    }
+                });
+        }
+
+        function showReceipt(receipt) {
+            const img = document.getElementById('receipt-image');
+            const pdf = document.getElementById('receipt-pdf');
+            const placeholder = document.getElementById('receipt-placeholder');
+            
+            img.style.display = 'none';
+            pdf.style.display = 'none';
+            placeholder.style.display = 'none';
+            
+            if (receipt.file_type === 'pdf') {
+                pdf.src = receipt.url;
+                pdf.style.display = 'block';
+            } else {
+                img.src = receipt.url;
+                img.style.display = 'block';
+            }
+        }
+
+        function showNoReceipt() {
+            document.getElementById('receipt-image').style.display = 'none';
+            document.getElementById('receipt-pdf').style.display = 'none';
+            document.getElementById('receipt-placeholder').style.display = 'block';
+        }
+
+        // Receipt Actions
+        function uploadNewReceipt() {
+            document.getElementById('hidden-file-input').click();
+        }
+
+        function processReceiptUpload(event) {
+            const file = event.target.files[0];
+            if (file && currentTrip !== null && currentTransaction !== null) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('trip_id', currentTrip);
+                formData.append('transaction_id', currentTransaction);
+                
+                fetch('/api/upload-receipt', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    showReceipt(data.receipt);
+                    updateExpenseReceiptStatus(currentTrip, currentTransaction, true);
+                });
+            }
+        }
+
+        function rotateReceipt() {
+            if (currentTrip !== null && currentTransaction !== null) {
+                fetch(`/api/receipts/${currentTrip}/${currentTransaction}/rotate`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        loadReceiptForExpense(currentTrip, currentTransaction);
+                    }
+                });
+            }
+        }
+
+        function enhanceReceipt() {
+            alert('Receipt enhancement feature coming soon!');
+        }
+
+        function ocrReceipt() {
+            if (currentTrip !== null && currentTransaction !== null) {
+                fetch(`/api/receipts/${currentTrip}/${currentTransaction}/ocr`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.text) {
+                        alert(`Extracted text: ${data.text.substring(0, 200)}...`);
+                    }
+                });
+            }
+        }
+
+        function flagReceiptIssue() {
+            const issue = prompt('What issue would you like to report with this receipt?');
+            if (issue) {
+                fetch(`/api/receipts/${currentTrip}/${currentTransaction}/flag`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({issue: issue})
+                })
+                .then(() => alert('Receipt flagged for review'));
+            }
+        }
+
+        function deleteReceipt() {
+            if (confirm('Are you sure you want to delete this receipt?')) {
+                fetch(`/api/receipts/${currentTrip}/${currentTransaction}`, {
+                    method: 'DELETE'
+                })
+                .then(() => {
+                    showNoReceipt();
+                    updateExpenseReceiptStatus(currentTrip, currentTransaction, false);
+                });
+            }
+        }
+
+        // Hotel Folio Functions
+        function retrieveAllFolios() {
+            document.getElementById('folio-status').innerHTML = 
+                '<i class="fas fa-spinner fa-spin"></i> Retrieving hotel folios...';
+            
+            fetch('/api/retrieve-folios', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    search_email: true,
+                    download_folios: true
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                setTimeout(() => {
+                    location.reload(); // Refresh to show retrieved folios
+                }, 2000);
+            });
+        }
+
+        function retrieveFoliosForTrip(tripId) {
+            fetch(`/api/retrieve-folios/${tripId}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                updateTripFolios(tripId, data.folios);
+            });
+        }
+
+        // Utility Functions
+        function updateTripReceiptStatus(tripId, uploads) {
+            const countElement = document.getElementById(`receipt-count-${tripId}`);
+            if (countElement) {
+                const currentCount = parseInt(countElement.textContent.split(' ')[0]) || 0;
+                countElement.textContent = `${currentCount + uploads.length} receipts`;
+            }
+        }
+
+        function updateExpenseReceiptStatus(tripId, transactionId, hasReceipt) {
+            const expenseCard = document.querySelector(
+                `[data-trip="${tripId}"][data-transaction="${transactionId}"]`
+            );
+            if (expenseCard) {
+                if (hasReceipt) {
+                    expenseCard.classList.remove('missing-receipt');
+                    expenseCard.classList.add('has-receipt');
+                    
+                    const statusElement = expenseCard.querySelector('.folio-status');
+                    statusElement.innerHTML = '<span class="text-success"><i class="fas fa-check"></i> Receipt attached</span>';
+                } else {
+                    expenseCard.classList.remove('has-receipt');
+                    expenseCard.classList.add('missing-receipt');
+                    
+                    const statusElement = expenseCard.querySelector('.folio-status');
+                    statusElement.innerHTML = '<span class="text-warning"><i class="fas fa-exclamation-triangle"></i> No receipt</span>';
+                }
+            }
+        }
+
+        function displayBulkResults(uploads) {
+            const resultsDiv = document.getElementById('bulk-upload-results');
+            const listDiv = document.getElementById('bulk-results-list');
+            
+            listDiv.innerHTML = '';
+            uploads.forEach(upload => {
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                item.innerHTML = `
+                    <div>
+                        <strong>${upload.filename}</strong>
+                        <small class="text-muted d-block">Size: ${(upload.size / 1024).toFixed(1)} KB</small>
+                    </div>
+                    <span class="badge bg-success">Uploaded</span>
+                `;
+                listDiv.appendChild(item);
+            });
+            
+            resultsDiv.style.display = 'block';
+        }
+
+        function autoMatchReceipts() {
+            fetch('/api/auto-match-receipts', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(`Matched ${data.matches} receipts to expenses automatically.`);
+                location.reload();
+            });
+        }
+
+        function showUploadSuccess(count) {
+            const toast = document.createElement('div');
+            toast.className = 'toast position-fixed top-0 end-0 m-3';
+            toast.innerHTML = `
+                <div class="toast-header">
+                    <i class="fas fa-check-circle text-success me-2"></i>
+                    <strong class="me-auto">Upload Successful</strong>
+                </div>
+                <div class="toast-body">
+                    Successfully uploaded ${count} receipt(s).
+                </div>
+            `;
+            document.body.appendChild(toast);
+            
+            const bsToast = new bootstrap.Toast(toast);
+            bsToast.show();
+            
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        function showUploadError(message) {
+            alert(`Upload failed: ${message}`);
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            updateReceiptCounts();
+            setupFilters();
+        });
+
+        function updateReceiptCounts() {
+            // Update the overview counts
+            fetch('/api/receipt-stats')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('receipts-complete').textContent = data.complete || 0;
+                    document.getElementById('receipts-missing').textContent = data.missing || 0;
+                    document.getElementById('folios-retrieved').textContent = data.folios || 0;
+                    document.getElementById('total-attachments').textContent = data.total || 0;
+                });
+        }
+
+        function setupFilters() {
+            document.getElementById('receipt-search').addEventListener('input', filterReceipts);
+            document.getElementById('receipt-filter').addEventListener('change', filterReceipts);
+            document.getElementById('trip-filter').addEventListener('change', filterReceipts);
+        }
+
+        function filterReceipts() {
+            // Implement filtering logic
+            const search = document.getElementById('receipt-search').value.toLowerCase();
+            const filter = document.getElementById('receipt-filter').value;
+            const tripFilter = document.getElementById('trip-filter').value;
+            
+            // Filter implementation would go here
+        }
+    </script>
+</body>
+</html>
