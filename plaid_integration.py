@@ -176,6 +176,15 @@ class PlaidLinkManager:
             logger.error(f"Error getting accounts: {e}")
             raise Exception(f"Failed to get accounts: {str(e)}")
 
+    def get_all_account_ids(self, access_token: str) -> List[str]:
+        """Return all account IDs for the given access token."""
+        try:
+            accounts = self.get_accounts(access_token)
+            return [a['account_id'] for a in accounts]
+        except Exception as e:
+            logger.error(f"Error getting all account IDs: {e}")
+            return []
+
     def get_transactions(self, access_token: str, start_date: datetime, end_date: datetime, 
                         account_ids: Optional[List[str]] = None, count: int = 500) -> List[Dict]:
         """Get transactions for specified date range."""
@@ -401,22 +410,38 @@ def exchange_plaid_token(public_token: str) -> Optional[Dict]:
         logger.error(f"Error exchanging token: {e}")
         return None
 
-def get_plaid_transactions(access_token: str, start_date: datetime, end_date: datetime) -> Optional[List[Dict]]:
-    """Get transactions from Plaid."""
+def get_plaid_transactions(access_token: str, start_date: datetime, end_date: datetime, filter_mode: Optional[str] = "credit") -> Optional[List[Dict]]:
+    """Get transactions from Plaid.
+
+    If filter_mode is None or empty, reads PLAID_ACCOUNT_FILTER from environment.
+    Accepts 'credit' (only credit card accounts) or 'all' (all accounts).
+    Defaults to 'credit'.
+    """
     manager = get_plaid_manager()
     if not manager:
         return None
     
     try:
-        # Get ALL credit card account IDs across institutions
-        credit_account_ids = manager.get_credit_account_ids(access_token)
+        # Determine which accounts to include based on filter_mode or env
+        account_ids: Optional[List[str]] = None
+        if not filter_mode:
+            filter_mode = os.getenv('PLAID_ACCOUNT_FILTER', 'credit').lower().strip()
 
-        # Get transactions for credit card accounts only (if found)
+        if filter_mode == "credit":
+            account_ids = manager.get_credit_account_ids(access_token)
+        elif filter_mode == "all":
+            account_ids = manager.get_all_account_ids(access_token)
+        else:
+            # Fallback to credit if invalid value provided
+            logger.warning(f"Unknown filter_mode '{filter_mode}', defaulting to 'credit'")
+            account_ids = manager.get_credit_account_ids(access_token)
+
+        # Fetch transactions for the selected accounts (if any found)
         return manager.get_transactions(
             access_token=access_token,
             start_date=start_date,
             end_date=end_date,
-            account_ids=credit_account_ids if credit_account_ids else None
+            account_ids=account_ids if account_ids else None
         )
     except Exception as e:
         logger.error(f"Error getting transactions: {e}")
