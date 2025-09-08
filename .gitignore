@@ -46,6 +46,13 @@ env/
 *.sqlite
 *.sqlite3
 data/*.db
+# SQLite VFS journaling files
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Uploads
 uploads/*
@@ -54,6 +61,9 @@ uploads/*
 # Logs
 *.log
 logs/
+
+# Sessions
+flask_session/
 
 # Testing
 .pytest_cache/
@@ -99,3 +109,5 @@ Desktop.ini
 concur_expenses/
 test_*.db
 *.backup
+# Local media assets not meant for version control
+logo/*.png
