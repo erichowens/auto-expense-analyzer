@@ -26,6 +26,14 @@ try:
 except ImportError:
     PLAID_AVAILABLE = False
 
+# Import our enhanced security module
+try:
+    from plaid_security import plaid_security, secure_plaid_request
+    SECURITY_ENABLED = True
+except ImportError:
+    SECURITY_ENABLED = False
+    print("Warning: plaid_security module not available")
+
 logger = logging.getLogger(__name__)
 
 class PlaidLinkManager:
@@ -98,20 +106,45 @@ class PlaidLinkManager:
             logger.error(f"Error creating link token: {e}")
             raise Exception(f"Failed to create link token: {str(e)}")
 
-    def exchange_public_token(self, public_token: str) -> Dict:
-        """Exchange a public token for an access token."""
+    def exchange_public_token(self, public_token: str, user_id: str = None) -> Dict:
+        """Exchange a public token for an access token with secure storage."""
         try:
             request = ItemPublicTokenExchangeRequest(public_token=public_token)
             response = self.client.item_public_token_exchange(request)
             
+            access_token = response['access_token']
+            item_id = response['item_id']
+            
+            # Securely store the token if security module is available
+            if SECURITY_ENABLED and user_id:
+                stored = plaid_security.token_vault.store_token(
+                    user_id=user_id,
+                    access_token=access_token,
+                    item_id=item_id
+                )
+                if stored:
+                    logger.info(f"Token securely stored for user {user_id}")
+                    # Audit the token exchange
+                    plaid_security.audit_plaid_action(
+                        'TOKEN_EXCHANGE',
+                        user_id,
+                        {'item_id': item_id, 'success': True}
+                    )
+            
             return {
-                'access_token': response['access_token'],
-                'item_id': response['item_id'],
+                'access_token': access_token,
+                'item_id': item_id,
                 'request_id': response['request_id']
             }
             
         except Exception as e:
             logger.error(f"Error exchanging public token: {e}")
+            if SECURITY_ENABLED and user_id:
+                plaid_security.audit_plaid_action(
+                    'TOKEN_EXCHANGE_FAILED',
+                    user_id,
+                    {'error': str(e)}
+                )
             raise Exception(f"Failed to exchange public token: {str(e)}")
 
     def get_accounts(self, access_token: str) -> List[Dict]:

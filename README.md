@@ -1,106 +1,58 @@
-# Chase Travel Expense Analyzer
+# Receiprocate - Automated Expense Discovery App
 
-Analyzes Chase bank statements to identify travel expenses outside Oregon and groups them into trips for Concur expense reporting.
+## Project Overview
+Automated expense discovery app that farms accounts through Plaid to find likely expensable expenses and submits to Concur.
 
-## Features
+**Core Innovation**: Reciprocal relationship - provide financial transparency, receive discovered money.
 
-- **Plaid API Integration**: Automatically fetch transactions from Chase accounts
-- **CSV Support**: Process downloaded Chase CSV statements
-- **Location Detection**: Identifies non-Oregon expenses using merchant location data
-- **Trip Grouping**: Groups contiguous expenses into logical trips
-- **Expense Categorization**: Categorizes expenses (Hotel, Airfare, Meals, Transportation)
-- **Concur-Ready Reports**: Generates formatted summaries for expense reporting
+## Logo & Assets
 
-## Quick Start
+### Logo Download Instructions
+1. Go to: https://evalstate-flux1-schnell.hf.space/gradio_api/file=/tmp/gradio/153380f52c136dcb592b4128ab8bd5ca1b8fecf8bea6c81a4fb226cf0569420e/image.webp317156221
+2. Right-click and save as `receiprocate_logo.png` in this directory
+3. Consider creating additional formats:
+   - `receiprocate_logo.svg` (vector version)
+   - `receiprocate_icon.png` (square app icon version)
+   - `receiprocate_logo_white.png` (white version for dark backgrounds)
 
-### Option 1: Using Plaid API (Recommended)
-
-1. **Setup Plaid**:
-   ```bash
-   python chase_travel_expense_analyzer.py --setup-plaid
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure credentials**:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your Plaid credentials
-   ```
-
-4. **Run with Plaid**:
-   ```bash
-   python chase_travel_expense_analyzer.py --plaid --access-token YOUR_TOKEN
-   ```
-
-### Option 2: Using CSV Files
-
-1. Download CSV statements from Chase online banking
-2. Run the analyzer:
-   ```bash
-   python chase_travel_expense_analyzer.py --files statement1.csv statement2.csv
-   ```
-
-## Usage Examples
-
-```bash
-# Analyze last 2 years via Plaid
-python chase_travel_expense_analyzer.py --plaid --access-token your_token
-
-# Analyze CSV files for last 3 years
-python chase_travel_expense_analyzer.py --files *.csv --years 3
-
-# Save report to file
-python chase_travel_expense_analyzer.py --plaid --access-token your_token --output report.txt
-
-# Custom trip grouping (5 day gaps)
-python chase_travel_expense_analyzer.py --files *.csv --gap-days 5
+### Brand Colors (CSS/Hex)
+```css
+:root {
+  --primary-green: #00D664;
+  --secondary-navy: #1E3A8A;
+  --white: #FFFFFF;
+  --light-gray: #F5F5F5;
+}
 ```
 
-## Command Line Options
+## Technical Architecture
 
-- `--plaid`: Use Plaid API instead of CSV files
-- `--access-token`: Plaid access token for API access
-- `--public-token`: Exchange public token for access token
-- `--files`: CSV statement files to process
-- `--years`: Number of years to analyze (default: 2)
-- `--gap-days`: Max days between transactions in same trip (default: 2)
-- `--output`: Save report to file
-- `--setup-plaid`: Show Plaid setup instructions
+### Integration Stack
+- **Plaid API**: Bank account data aggregation
+- **Concur API**: Expense report submission
+- **ML/AI**: Pattern recognition for expense categorization
+- **Backend**: Transaction analysis and matching algorithms
 
-## Sample Output
+### Key Features
+- Automated account scanning
+- Smart expense categorization
+- Duplicate detection
+- Automated Concur submission
+- User approval workflows
+- Expense policy compliance checking
 
-```
-TRAVEL EXPENSE SUMMARY FOR CONCUR REPORTING
-===========================================
+## Brand Positioning
+**Tagline Ideas**:
+- "Your financial data, reciprocated"
+- "Transparent. Automated. Rewarded."
+- "Farm your finances, harvest your expenses"
 
-Total Travel Expenses: $1,245.67
-Number of Trips: 3
+## Next Steps
+1. [ ] Save logo assets
+2. [ ] Set up development environment
+3. [ ] Research Plaid and Concur API documentation
+4. [ ] Define MVP feature set
+5. [ ] Create wireframes using brand colors
 
-TRIP #1
--------
-Dates: 01/15/2024 - 01/18/2024 (4 days)
-Location: SEATTLE WA
-Total Amount: $737.22
-
-Expense Breakdown:
-  HOTEL: $245.67
-  AIRFARE: $425.00
-  MEALS: $49.05
-  TRANSPORTATION: $18.50
-```
-
-## Requirements
-
-- Python 3.7+
-- Plaid developer account (for API access)
-- Chase bank account with transaction history
-
-## Security
-
-- Never commit your `.env` file
-- Store API credentials securely
-- Use sandbox environment for testing
+---
+*Part of Erich Owens app portfolio*

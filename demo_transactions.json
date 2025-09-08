@@ -1,0 +1,170 @@
+[
+  {
+    "date": "2024-01-15",
+    "description": "UNITED AIRLINES",
+    "amount": 523.4,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-01-15",
+    "description": "MARRIOTT UNION SQUARE",
+    "amount": 289.0,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-01-15",
+    "description": "UBER FROM AIRPORT",
+    "amount": 47.23,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-01-16",
+    "description": "STARBUCKS MARKET ST",
+    "amount": 8.45,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-01-16",
+    "description": "THE PALM RESTAURANT",
+    "amount": 287.5,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-01-17",
+    "description": "MARRIOTT UNION SQUARE",
+    "amount": 289.0,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-01-17",
+    "description": "LUNCH - CHIPOTLE",
+    "amount": 14.5,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-01-18",
+    "description": "UNITED AIRLINES",
+    "amount": 523.4,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-01-18",
+    "description": "SFO AIRPORT PARKING",
+    "amount": 45.0,
+    "location": "SAN FRANCISCO, CA"
+  },
+  {
+    "date": "2024-02-10",
+    "description": "DELTA AIR LINES",
+    "amount": 412.3,
+    "location": "NEW YORK, NY"
+  },
+  {
+    "date": "2024-02-10",
+    "description": "HILTON MIDTOWN",
+    "amount": 359.0,
+    "location": "NEW YORK, NY"
+  },
+  {
+    "date": "2024-02-11",
+    "description": "YELLOW CAB",
+    "amount": 35.5,
+    "location": "NEW YORK, NY"
+  },
+  {
+    "date": "2024-02-11",
+    "description": "CLIENT DINNER - NOBU",
+    "amount": 425.0,
+    "location": "NEW YORK, NY"
+  },
+  {
+    "date": "2024-02-12",
+    "description": "HILTON MIDTOWN",
+    "amount": 359.0,
+    "location": "NEW YORK, NY"
+  },
+  {
+    "date": "2024-02-12",
+    "description": "UBER TO JFK",
+    "amount": 68.0,
+    "location": "NEW YORK, NY"
+  },
+  {
+    "date": "2024-02-13",
+    "description": "DELTA AIR LINES",
+    "amount": 412.3,
+    "location": "NEW YORK, NY"
+  },
+  {
+    "date": "2024-03-05",
+    "description": "SOUTHWEST AIRLINES",
+    "amount": 234.5,
+    "location": "AUSTIN, TX"
+  },
+  {
+    "date": "2024-03-05",
+    "description": "HYATT REGENCY AUSTIN",
+    "amount": 199.0,
+    "location": "AUSTIN, TX"
+  },
+  {
+    "date": "2024-03-06",
+    "description": "CONFERENCE REGISTRATION",
+    "amount": 799.0,
+    "location": "AUSTIN, TX"
+  },
+  {
+    "date": "2024-03-06",
+    "description": "BREAKFAST - IHOP",
+    "amount": 18.75,
+    "location": "AUSTIN, TX"
+  },
+  {
+    "date": "2024-03-06",
+    "description": "HYATT REGENCY AUSTIN",
+    "amount": 199.0,
+    "location": "AUSTIN, TX"
+  },
+  {
+    "date": "2024-03-07",
+    "description": "TEAM DINNER - BBQ PLACE",
+    "amount": 156.0,
+    "location": "AUSTIN, TX"
+  },
+  {
+    "date": "2024-03-08",
+    "description": "SOUTHWEST AIRLINES",
+    "amount": 234.5,
+    "location": "AUSTIN, TX"
+  },
+  {
+    "date": "2025-08-22",
+    "description": "UBER",
+    "amount": 97.93,
+    "location": "LOCAL"
+  },
+  {
+    "date": "2025-08-20",
+    "description": "LUNCH MEETING",
+    "amount": 69.4,
+    "location": "LOCAL"
+  },
+  {
+    "date": "2025-08-18",
+    "description": "UBER",
+    "amount": 10.05,
+    "location": "LOCAL"
+  },
+  {
+    "date": "2025-08-16",
+    "description": "UBER",
+    "amount": 76.26,
+    "location": "LOCAL"
+  },
+  {
+    "date": "2025-08-14",
+    "description": "UBER",
+    "amount": 88.39,
+    "location": "LOCAL"
+  }
+]

@@ -5,6 +5,8 @@ A Flask web app for reviewing, editing, and submitting travel expenses to Concur
 """
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file, abort
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 from werkzeug.exceptions import RequestEntityTooLarge
 import os
@@ -17,25 +19,53 @@ import threading
 import logging
 from typing import Dict, List, Optional, Any
 
+# Import new modules
+from config import get_config
+from api_response import APIResponse, handle_api_errors
+from validators import (
+    FridayPanicRequest, BulkProcessRequest, BusinessPurposeInput,
+    validate_json, validate_request_data
+)
+from services import get_expense_service, get_task_service, get_purpose_service
+from database_pool import get_db
+
 # Import our existing modules
 try:
     from chase_travel_expense_analyzer import ChaseAnalyzer, Transaction
     from hotel_folio_retriever import HotelFolioRetriever
     from concur_api_client import ConcurAPIClient, convert_trip_to_concur_report
     from database import get_database, init_database
+    from friday_panic_button import friday_panic, process_bulk_expenses
     MODULES_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Some modules not available: {e}")
     MODULES_AVAILABLE = False
 
+# Load configuration
+config = get_config()
+
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL),
+    format=config.LOG_FORMAT
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
-app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.secret_key = config.SECRET_KEY
+app.config['UPLOAD_FOLDER'] = config.UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = config.MAX_CONTENT_LENGTH
+app.config['SESSION_COOKIE_SECURE'] = config.SESSION_COOKIE_SECURE
+app.config['SESSION_COOKIE_HTTPONLY'] = config.SESSION_COOKIE_HTTPONLY
+app.config['SESSION_COOKIE_SAMESITE'] = config.SESSION_COOKIE_SAMESITE
+
+# Initialize rate limiter
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=[config.RATE_LIMIT_DEFAULT] if config.RATE_LIMIT_ENABLED else [],
+    storage_uri=config.RATE_LIMIT_STORAGE_URL
+)
 
 # Ensure required directories exist
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -43,11 +73,21 @@ os.makedirs('data', exist_ok=True)
 os.makedirs('static/css', exist_ok=True)
 os.makedirs('static/js', exist_ok=True)
 
-# Initialize database
+# Initialize database with connection pooling
 if MODULES_AVAILABLE:
-    db = init_database()
+    try:
+        db = get_db()
+        logger.info("Database initialized with connection pooling")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        db = None
 else:
     db = None
+
+# Initialize services
+task_service = get_task_service()
+expense_service = get_expense_service()
+purpose_service = get_purpose_service()
 
 # Global state for the application (now backed by database)
 app_state = {
@@ -651,6 +691,92 @@ def set_trip_business_purpose(trip_id):
     except Exception as e:
         logger.error(f"Error setting business purpose: {e}")
         return jsonify({'error': 'Failed to set business purpose'}), 500
+
+@app.route('/api/friday-panic', methods=['POST'])
+@limiter.limit(config.RATE_LIMIT_PANIC_BUTTON)
+@handle_api_errors
+@validate_json(FridayPanicRequest)
+def friday_panic_endpoint():
+    """
+    The Friday Panic Button - auto-categorize and generate business purposes.
+    One click to make everything ready for submission.
+    """
+    if not expense_service:
+        return APIResponse.server_error("Service not available")
+    
+    # Get validated request data
+    panic_request = request.validated_data
+    
+    # Process transactions
+    success, result, error = expense_service.process_transactions(panic_request)
+    
+    if not success:
+        return APIResponse.error(error or "Processing failed", status_code=400)
+    
+    # Return standardized response
+    return APIResponse.success(
+        data=result,
+        message=f"Processed {len(result.get('transactions', []))} transactions successfully"
+    )
+
+@app.route('/api/friday-panic-bulk', methods=['POST'])
+@limiter.limit(config.RATE_LIMIT_BULK)
+@handle_api_errors
+@validate_json(BulkProcessRequest)
+def friday_panic_bulk_endpoint():
+    """
+    Bulk process all expenses since a specific date (e.g., January 2024).
+    Handles large volumes of transactions efficiently.
+    """
+    if not expense_service:
+        return APIResponse.server_error("Service not available")
+    
+    # Get validated request data
+    bulk_request = request.validated_data
+    
+    # Start bulk processing in background
+    task_id = expense_service.process_bulk(bulk_request)
+    
+    # Return accepted response with task ID
+    return APIResponse.accepted(
+        task_id=task_id,
+        message=f"Started bulk processing for expenses since {bulk_request.start_date}",
+        status_url=f"/api/task-status/{task_id}"
+    )
+
+@app.route('/api/task-status/<task_id>')
+@handle_api_errors
+def get_task_status(task_id):
+    """Get status of a background task."""
+    if not task_service:
+        return APIResponse.server_error("Service not available")
+    
+    # Validate task ID format
+    import re
+    uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    if not re.match(uuid_pattern, task_id.lower()):
+        return APIResponse.error("Invalid task ID format", status_code=400)
+    
+    task = task_service.get_task(task_id)
+    if not task:
+        return APIResponse.not_found("Task", task_id)
+    
+    # Format response based on task status
+    response_data = {
+        'task_id': task_id,
+        'description': task['description'],
+        'status': task['status'],
+        'progress': task['progress'],
+        'created_at': task['created_at'].isoformat(),
+        'updated_at': task['updated_at'].isoformat()
+    }
+    
+    if task['status'] == 'completed':
+        response_data['result'] = task['result']
+    elif task['status'] == 'error':
+        response_data['error'] = task['error']
+    
+    return APIResponse.success(data=response_data)
 
 @app.route('/api/health')
 def health_check():

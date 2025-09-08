@@ -1,0 +1,34 @@
+{
+  "name": "Receiprocate Brand Colors",
+  "colors": {
+    "primary": {
+      "name": "Receiprocate Green",
+      "hex": "#00D664",
+      "rgb": "rgb(0, 214, 100)",
+      "hsl": "hsl(148, 100%, 42%)",
+      "usage": "Primary brand color, CTAs, hero elements"
+    },
+    "secondary": {
+      "name": "Professional Navy",
+      "hex": "#1E3A8A", 
+      "rgb": "rgb(30, 58, 138)",
+      "hsl": "hsl(224, 64%, 33%)",
+      "usage": "Text, secondary elements, professional contexts"
+    },
+    "neutral": {
+      "white": {
+        "hex": "#FFFFFF",
+        "usage": "Backgrounds, negative space"
+      },
+      "light-gray": {
+        "hex": "#F5F5F5", 
+        "usage": "Supporting text, subtle UI elements"
+      }
+    },
+    "gradient": {
+      "name": "Primary Gradient",
+      "css": "linear-gradient(135deg, #00D664 0%, #1E3A8A 100%)",
+      "usage": "Hero sections, special elements, represents data flow"
+    }
+  }
+}

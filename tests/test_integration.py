@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from expense_web_app import app
 from database import DatabaseManager, init_database
 from chase_travel_expense_analyzer import ChaseAnalyzer, Transaction
+from friday_panic_button import FridayPanicButton, friday_panic, process_bulk_expenses
 
 class ExpenseReportIntegrationTest(unittest.TestCase):
     """Integration tests for the complete expense report workflow."""
@@ -370,12 +371,158 @@ class FileHandlingTest(unittest.TestCase):
                 # This test verifies the security check exists
                 print(f"✅ Security check for {filename}")
 
-if __name__ == '__main__':
-    pass
+from io import BytesIO  # Import required for BytesIO
 
-# Import required for BytesIO
-from io import BytesIO
+class FridayPanicButtonTest(unittest.TestCase):
+    """Integration tests for the Friday Panic Button feature."""
     
+    def setUp(self):
+        """Set up test environment."""
+        self.panic = FridayPanicButton()
+        self.sample_transactions = self._create_sample_transactions()
+    
+    def _create_sample_transactions(self):
+        """Create sample transactions for testing."""
+        return [
+            {'date': '2024-01-15', 'description': 'UNITED AIRLINES', 'amount': 523.40, 'location': 'SAN FRANCISCO, CA'},
+            {'date': '2024-01-15', 'description': 'MARRIOTT UNION SQUARE', 'amount': 289.00, 'location': 'SAN FRANCISCO, CA'},
+            {'date': '2024-01-15', 'description': 'UBER TECHNOLOGIES', 'amount': 47.23, 'location': 'SAN FRANCISCO, CA'},
+            {'date': '2024-01-16', 'description': 'STARBUCKS #4721', 'amount': 8.45, 'location': 'SAN FRANCISCO, CA'},
+            {'date': '2024-01-16', 'description': "MORTON'S STEAKHOUSE", 'amount': 287.50, 'location': 'SAN FRANCISCO, CA'},
+            {'date': '2024-02-10', 'description': 'DELTA AIRLINES', 'amount': 412.30, 'location': 'NEW YORK, NY'},
+            {'date': '2024-02-10', 'description': 'HILTON MIDTOWN', 'amount': 359.00, 'location': 'NEW YORK, NY'},
+            {'date': '2024-03-05', 'description': 'SOUTHWEST AIRLINES', 'amount': 234.50, 'location': 'AUSTIN, TX'},
+            {'date': '2024-03-05', 'description': 'HYATT DOWNTOWN', 'amount': 199.00, 'location': 'AUSTIN, TX'},
+        ]
+    
+    def test_panic_categorization(self):
+        """Test auto-categorization of transactions."""
+        print("\n🔥 Testing Friday Panic Auto-Categorization")
+        
+        result = self.panic.panic_categorize(self.sample_transactions)
+        
+        # Check all transactions were categorized
+        self.assertEqual(len(result), len(self.sample_transactions))
+        
+        # Check specific categorizations
+        categories_found = {t['category'] for t in result}
+        expected_categories = {'AIRFARE', 'HOTEL', 'TRANSPORTATION', 'MEALS', 'ENTERTAINMENT'}
+        
+        # Should have found most of these categories
+        self.assertTrue(categories_found & expected_categories)
+        
+        # Check confidence scores
+        high_confidence = [t for t in result if t['confidence'] > 0.8]
+        self.assertGreater(len(high_confidence), 5, "Should have high confidence for airlines and hotels")
+        
+        print(f"✅ Categorized {len(result)} transactions")
+        print(f"✅ Categories found: {categories_found}")
+        print(f"✅ High confidence items: {len(high_confidence)}/{len(result)}")
+    
+    def test_business_purpose_generation(self):
+        """Test automatic business purpose generation."""
+        print("\n📝 Testing Business Purpose Generation")
+        
+        categorized = self.panic.panic_categorize(self.sample_transactions)
+        purpose_result = self.panic.generate_smart_purpose(categorized)
+        
+        # Check purpose was generated
+        self.assertIsNotNone(purpose_result['primary_purpose'])
+        self.assertGreater(len(purpose_result['primary_purpose']), 10)
+        
+        # Check alternatives provided
+        self.assertIsInstance(purpose_result['alternatives'], list)
+        self.assertGreater(len(purpose_result['alternatives']), 0)
+        
+        # Check confidence
+        self.assertGreater(purpose_result['confidence'], 0.5)
+        
+        print(f"✅ Generated purpose: {purpose_result['primary_purpose']}")
+        print(f"✅ Confidence: {purpose_result['confidence']:.0%}")
+        print(f"✅ {len(purpose_result['alternatives'])} alternatives provided")
+    
+    def test_bulk_processing(self):
+        """Test bulk processing for large date ranges."""
+        print("\n📦 Testing Bulk Processing (Since Jan 2024)")
+        
+        # Create more transactions spanning multiple months
+        bulk_transactions = []
+        base_date = datetime(2024, 1, 1)
+        
+        for month in range(12):  # 12 months of data
+            for day in [5, 15, 25]:
+                date = base_date + timedelta(days=month*30 + day)
+                bulk_transactions.extend([
+                    {'date': date.strftime('%Y-%m-%d'), 'description': 'AIRLINE TEST', 'amount': 500 + month*10, 'location': 'TEST CITY'},
+                    {'date': date.strftime('%Y-%m-%d'), 'description': 'HOTEL TEST', 'amount': 200 + month*5, 'location': 'TEST CITY'},
+                ])
+        
+        # Process in bulk mode
+        result = process_bulk_expenses(bulk_transactions, start_date='2024-01-01')
+        
+        # Verify bulk processing results
+        self.assertIn('trips', result)
+        self.assertGreater(result['total_trips'], 0)
+        self.assertEqual(result['total_transactions'], len(bulk_transactions))
+        self.assertGreater(result['grand_total'], 0)
+        
+        print(f"✅ Processed {result['total_transactions']} transactions")
+        print(f"✅ Found {result['total_trips']} trips")
+        print(f"✅ Grand total: ${result['grand_total']:,.2f}")
+        print(f"✅ Average confidence: {result['processing_stats']['confidence_avg']:.0%}")
+    
+    def test_trip_grouping(self):
+        """Test automatic trip grouping logic."""
+        print("\n🗓️ Testing Trip Grouping")
+        
+        from friday_panic_button import group_transactions_by_trip
+        
+        # Test transactions with gaps
+        trips = group_transactions_by_trip(self.sample_transactions, max_gap_days=7)
+        
+        # Should group Jan, Feb, and Mar transactions separately
+        self.assertGreaterEqual(len(trips), 3)
+        
+        # Verify each trip has transactions
+        for trip in trips:
+            self.assertGreater(len(trip), 0)
+        
+        print(f"✅ Grouped into {len(trips)} trips")
+        for i, trip in enumerate(trips, 1):
+            dates = [t['date'] for t in trip]
+            print(f"   Trip {i}: {min(dates)} to {max(dates)} ({len(trip)} transactions)")
+    
+    def test_performance_with_large_dataset(self):
+        """Test performance with a large number of transactions."""
+        print("\n⚡ Testing Performance with Large Dataset")
+        
+        # Create 1000 transactions
+        large_dataset = []
+        for i in range(1000):
+            date = datetime(2024, 1, 1) + timedelta(days=i % 365)
+            large_dataset.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'description': f'TEST TRANSACTION {i}',
+                'amount': 100 + (i % 500),
+                'location': f'CITY {i % 10}'
+            })
+        
+        import time
+        start_time = time.time()
+        
+        # Process with batching
+        result = self.panic.panic_categorize(large_dataset, batch_size=100)
+        
+        elapsed_time = time.time() - start_time
+        
+        # Should complete in reasonable time
+        self.assertLess(elapsed_time, 5.0, "Should process 1000 transactions in under 5 seconds")
+        self.assertEqual(len(result), 1000)
+        
+        print(f"✅ Processed 1000 transactions in {elapsed_time:.2f} seconds")
+        print(f"✅ Rate: {1000/elapsed_time:.0f} transactions/second")
+
+if __name__ == '__main__':
     print("🚀 Running Integration Tests for Travel Expense Analyzer")
     print("=" * 60)
     

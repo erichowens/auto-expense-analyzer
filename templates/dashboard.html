@@ -142,7 +142,25 @@
         <div class="row mb-4">
             <div class="col-12">
                 <h3>Quick Actions</h3>
-                <div class="d-flex gap-2 flex-wrap">
+                <div class="d-flex gap-2 flex-wrap align-items-start">
+                    <div class="dropdown">
+                        <button class="btn btn-danger btn-lg dropdown-toggle" type="button" id="panicDropdown" 
+                                data-bs-toggle="dropdown" aria-expanded="false" style="min-height: 60px;">
+                            <i class="fas fa-fire me-1"></i><strong>FRIDAY PANIC</strong>
+                            <small class="d-block" style="font-size: 0.7em; margin-top: 2px;">Auto-categorize Everything</small>
+                        </button>
+                        <ul class="dropdown-menu" aria-labelledby="panicDropdown">
+                            <li><a class="dropdown-item" href="#" onclick="fridayPanicBulk(); return false;">
+                                <i class="fas fa-rocket me-2"></i>Process ALL Since Jan 2024
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="fridayPanicRecent(); return false;">
+                                <i class="fas fa-bolt me-2"></i>Process Last 30 Days
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="fridayPanicCurrentTrip(); return false;">
+                                <i class="fas fa-check me-2"></i>Process Current Trip
+                            </a></li>
+                        </ul>
+                    </div>
                     <button class="btn btn-primary" onclick="startAnalysis()">
                         <i class="fas fa-search me-1"></i>Analyze Expenses
                     </button>
@@ -155,6 +173,26 @@
                     <button class="btn btn-success" onclick="createConcurReports()">
                         <i class="fas fa-paper-plane me-1"></i>Submit to Concur
                     </button>
+                </div>
+                
+                <!-- Friday Panic Progress Section -->
+                <div id="panicProgress" class="mt-3" style="display: none;">
+                    <div class="alert alert-info">
+                        <h5><i class="fas fa-spinner fa-spin me-2"></i>Processing Expenses...</h5>
+                        <div class="progress mt-2" style="height: 25px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" 
+                                 style="width: 0%" id="panicProgressBar"></div>
+                        </div>
+                        <p class="mt-2 mb-0" id="panicStatus">Initializing...</p>
+                    </div>
+                </div>
+                
+                <!-- Friday Panic Results Section -->
+                <div id="panicResults" class="mt-3" style="display: none;">
+                    <div class="alert alert-success">
+                        <h5><i class="fas fa-check-circle me-2"></i>Processing Complete!</h5>
+                        <div id="panicResultDetails"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -546,6 +584,183 @@
             document.getElementById('main-progress').style.width = `${percent}%`;
             document.getElementById('status-text').textContent = text;
             document.getElementById('status-details').textContent = details;
+        }
+        
+        function fridayPanic() {
+            fridayPanicRecent();  // Default to recent transactions
+        }
+        
+        function fridayPanicBulk() {
+            if (!confirm('Process ALL expenses since January 2024? This may take a few minutes for large volumes.')) {
+                return;
+            }
+            
+            document.getElementById('panicProgress').style.display = 'block';
+            document.getElementById('panicResults').style.display = 'none';
+            updatePanicProgress(0, 'Starting bulk processing since January 2024...');
+            
+            fetch('/api/friday-panic-bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ start_date: '2024-01-01' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.task_id) {
+                    pollPanicTaskStatus(data.task_id);
+                } else {
+                    throw new Error(data.error || 'Failed to start bulk processing');
+                }
+            })
+            .catch(error => {
+                updatePanicProgress(0, 'Error: ' + error.message);
+            });
+        }
+        
+        function fridayPanicRecent() {
+            // Show panic mode UI
+            document.getElementById('progress-section').style.display = 'block';
+            updateProgress(10, '🔥 PANIC MODE ACTIVATED', 'Analyzing all your expenses...');
+            
+            fetch('/api/friday-panic', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trip_id: null })  // Process all recent transactions
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const result = data.result;
+                    
+                    // Show results
+                    let message = `✅ Processed ${result.transactions.length} transactions!\n`;
+                    message += `📊 Confidence: ${(result.confidence_score * 100).toFixed(0)}%\n`;
+                    message += `✍️ Business Purpose: "${result.business_purpose.primary_purpose}"\n`;
+                    
+                    if (result.ready_to_submit) {
+                        message += '\n🎉 READY TO SUBMIT!';
+                        updateProgress(100, '✅ Ready for Concur!', `Saved ${result.estimated_time_saved}`);
+                    } else {
+                        message += `\n⚠️ ${result.needs_review.length} items need review`;
+                        updateProgress(80, 'Almost ready...', 'Please review flagged items');
+                    }
+                    
+                    // Show breakdown
+                    let breakdown = '\n\nCategory Breakdown:\n';
+                    for (const [cat, total] of Object.entries(result.totals)) {
+                        breakdown += `  ${cat}: $${total.toFixed(2)}\n`;
+                    }
+                    
+                    alert(message + breakdown);
+                    
+                    // Refresh page to show updated data
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    updateProgress(0, '❌ Panic failed!', data.error || 'Unknown error');
+                    alert('Friday Panic failed: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                updateProgress(0, '❌ Error', error.message);
+                alert('Network error: ' + error.message);
+            });
+        }
+        
+        function fridayPanicCurrentTrip() {
+            const tripId = prompt('Enter Trip ID to process:');
+            if (!tripId) return;
+            
+            document.getElementById('progress-section').style.display = 'block';
+            updateProgress(10, '🔥 Processing trip...', 'Categorizing transactions...');
+            
+            fetch('/api/friday-panic', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ trip_id: tripId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const result = data.result;
+                    updateProgress(100, '✅ Trip processed!', `${result.transactions.length} transactions categorized`);
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    updateProgress(0, '❌ Failed', data.error || 'Unknown error');
+                }
+            })
+            .catch(error => {
+                updateProgress(0, '❌ Error', error.message);
+            });
+        }
+        
+        function pollPanicTaskStatus(taskId) {
+            fetch(`/api/task-status/${taskId}`)
+                .then(response => response.json())
+                .then(data => {
+                    updatePanicProgress(data.progress, data.description);
+                    
+                    if (data.status === 'completed') {
+                        displayBulkPanicResults(data.result);
+                    } else if (data.status === 'error') {
+                        updatePanicProgress(0, 'Error: ' + data.error);
+                    } else {
+                        // Continue polling
+                        setTimeout(() => pollPanicTaskStatus(taskId), 2000);
+                    }
+                })
+                .catch(error => {
+                    updatePanicProgress(0, 'Error checking status: ' + error.message);
+                });
+        }
+        
+        function updatePanicProgress(percent, status) {
+            const progressBar = document.getElementById('panicProgressBar');
+            const statusText = document.getElementById('panicStatus');
+            
+            if (progressBar) {
+                progressBar.style.width = percent + '%';
+                progressBar.textContent = percent + '%';
+            }
+            if (statusText) {
+                statusText.textContent = status;
+            }
+        }
+        
+        function displayBulkPanicResults(result) {
+            document.getElementById('panicProgress').style.display = 'none';
+            document.getElementById('panicResults').style.display = 'block';
+            
+            const details = document.getElementById('panicResultDetails');
+            details.innerHTML = `
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6>Processing Statistics</h6>
+                        <p><strong>Total Trips Found:</strong> ${result.total_trips}</p>
+                        <p><strong>Total Transactions:</strong> ${result.total_processed}</p>
+                        <p><strong>Successfully Categorized:</strong> ${result.saved_count}</p>
+                        <p><strong>Grand Total:</strong> $${result.grand_total.toFixed(2)}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Date Range</h6>
+                        <p><strong>From:</strong> ${result.date_range.start}</p>
+                        <p><strong>To:</strong> ${result.date_range.end}</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Processing Stats</h6>
+                        <p><strong>Original Count:</strong> ${result.processing_stats.original_count}</p>
+                        <p><strong>After Filter:</strong> ${result.processing_stats.filtered_count}</p>
+                        <p><strong>Average Confidence:</strong> ${(result.processing_stats.confidence_avg * 100).toFixed(0)}%</p>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-primary" onclick="location.href='/trips'">
+                        <i class="fas fa-plane me-2"></i>View All Trips
+                    </button>
+                    <button class="btn btn-secondary ms-2" onclick="location.reload()">
+                        <i class="fas fa-sync me-2"></i>Refresh Dashboard
+                    </button>
+                </div>
+            `;
         }
     </script>
 </body>
