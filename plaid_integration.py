@@ -299,6 +299,24 @@ class PlaidLinkManager:
         # Default to OTHER for manual review
         return 'OTHER'
 
+    def get_credit_account_ids(self, access_token: str) -> List[str]:
+        """Return account IDs for all credit card accounts across any institution.
+
+        Uses Plaid account 'type' and 'subtype' to determine credit cards.
+        """
+        try:
+            accounts = self.get_accounts(access_token)
+            credit_ids: List[str] = []
+            for account in accounts:
+                acc_type = (account.get('type') or '').lower()
+                acc_subtype = (account.get('subtype') or '').lower()
+                if acc_type == 'credit' or 'credit' in acc_subtype:
+                    credit_ids.append(account['account_id'])
+            return credit_ids
+        except Exception as e:
+            logger.error(f"Error determining credit account IDs: {e}")
+            return []
+
     def validate_access_token(self, access_token: str) -> bool:
         """Validate that an access token is still valid."""
         try:
@@ -309,8 +327,13 @@ class PlaidLinkManager:
             logger.warning(f"Access token validation failed: {e}")
             return False
 
-    def get_chase_account_ids(self, access_token: str) -> List[str]:
-        """Get account IDs for Chase accounts specifically."""
+    def get_chase_account_ids(self, access_token: str, credit_only: bool = False) -> List[str]:
+        """Get account IDs for Chase accounts specifically.
+
+        Args:
+            access_token: Plaid access token
+            credit_only: If True, only include Chase credit card accounts
+        """
         try:
             accounts = self.get_accounts(access_token)
             
@@ -321,6 +344,12 @@ class PlaidLinkManager:
                               account.get('official_name', '')).lower()
                 
                 if 'chase' in account_name:
+                    if credit_only:
+                        acc_type = (account.get('type') or '').lower()
+                        acc_subtype = (account.get('subtype') or '').lower()
+                        # Plaid credit cards typically have type 'credit' and/or subtype including 'credit'
+                        if acc_type != 'credit' and 'credit' not in acc_subtype:
+                            continue
                     chase_account_ids.append(account['account_id'])
             
             return chase_account_ids
@@ -379,15 +408,15 @@ def get_plaid_transactions(access_token: str, start_date: datetime, end_date: da
         return None
     
     try:
-        # Get Chase account IDs specifically
-        chase_account_ids = manager.get_chase_account_ids(access_token)
-        
-        # Get transactions for Chase accounts only (if found)
+        # Get ALL credit card account IDs across institutions
+        credit_account_ids = manager.get_credit_account_ids(access_token)
+
+        # Get transactions for credit card accounts only (if found)
         return manager.get_transactions(
             access_token=access_token,
             start_date=start_date,
             end_date=end_date,
-            account_ids=chase_account_ids if chase_account_ids else None
+            account_ids=credit_account_ids if credit_account_ids else None
         )
     except Exception as e:
         logger.error(f"Error getting transactions: {e}")
