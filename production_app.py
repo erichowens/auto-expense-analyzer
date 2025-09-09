@@ -28,6 +28,11 @@ from collections import defaultdict
 import re
 from dataclasses import dataclass, asdict
 from enum import Enum
+from werkzeug.utils import secure_filename
+from pathlib import Path
+import hashlib
+import csv
+import io
 
 # Import security utilities
 from security_fixes import (
@@ -35,6 +40,7 @@ from security_fixes import (
     require_csrf, require_session, rate_limit, get_env_var,
     SecurityConfig, SQLQueryBuilder
 )
+from plaid_integration import get_plaid_transactions
 
 # Initialize Flask app with security
 app = Flask(__name__, static_folder='static', static_url_path='/static')
@@ -56,6 +62,10 @@ PLAID_SECRET = get_env_var('PLAID_SECRET')
 PLAID_ENV = get_env_var('PLAID_ENV', 'sandbox')
 PLAID_PRODUCTS = [Products('transactions')]
 PLAID_COUNTRY_CODES = [CountryCode('US')]
+
+# Database path (configurable)
+DB_PATH = get_env_var('DATABASE_PATH', 'data/expenses.db')
+Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
 # Initialize Plaid client
 plaid_env_mapping = {
@@ -107,6 +117,7 @@ class UserSettings:
     min_trip_days: int
     per_diem_amount: float
     selected_account_ids: List[str]
+    account_filter: str = 'credit'
     
     def to_dict(self):
         return asdict(self)
@@ -114,6 +125,8 @@ class UserSettings:
     @classmethod
     def from_dict(cls, data):
         data['trip_detection_rule'] = TripRule(data.get('trip_detection_rule', TripRule.OUT_OF_STATE_2_DAYS.value))
+        if 'account_filter' not in data:
+            data['account_filter'] = 'credit'
         return cls(**data)
 
 
@@ -370,7 +383,7 @@ class TripDetector:
 # Database setup
 def init_database():
     """Initialize database with proper schema."""
-    with SecureDatabase('expense_tracker.db') as db:
+    with SecureDatabase(DB_PATH) as db:
     
         # User settings table with secure schema
         db.execute("""
@@ -426,10 +439,26 @@ def init_database():
             )
         """)
         
+        # Import sessions (for CSV/OFX uploads)
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS import_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                source TEXT,
+                original_filenames TEXT,
+                rows_parsed INTEGER DEFAULT 0,
+                rows_imported INTEGER DEFAULT 0,
+                duplicates INTEGER DEFAULT 0,
+                errors INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         # Create indexes for performance
         db.execute("CREATE INDEX IF NOT EXISTS idx_trips_user ON trips(user_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id)")
         db.execute("CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_transactions_dedupe ON transactions(user_id, date, amount, name)")
 
 
 # Professional UI
@@ -815,6 +844,14 @@ PRODUCTION_DASHBOARD = """
                 </button>
                 
                 <div id="plaid-status" style="margin-top: 1rem;"></div>
+
+                <div style="margin: 2rem 0; text-align:center; color:#6c757d;">— or —</div>
+                <h3>Import Transactions (CSV/OFX/QFX)</h3>
+                <p style="color:#6c757d; margin-bottom:1rem;">Upload one or many transaction files exported from your bank or credit card.</p>
+                <input type="file" id="import-files" accept=".csv,.ofx,.qfx" multiple style="margin-bottom: 1rem;" />
+                <div>
+                    <button class="btn btn-secondary" onclick="importFiles()">Upload & Parse</button>
+                </div>
             </div>
             
             <!-- Step 2: Account Selection -->
@@ -825,6 +862,21 @@ PRODUCTION_DASHBOARD = """
                 </p>
                 
                 <div id="accounts-list" class="accounts-list"></div>
+
+                <div class="form-group" style="margin-top:1rem;">
+                    <label class="form-label">Account Filter (for Plaid fetch)</label>
+                    <div>
+                        <label style="margin-right:1rem;">
+                            <input type="radio" name="account-filter" id="account-filter-credit" value="credit" checked /> Credit cards only
+                        </label>
+                        <label>
+                            <input type="radio" name="account-filter" id="account-filter-all" value="all" /> All linked accounts
+                        </label>
+                    </div>
+                    <div style="color:#6c757d; font-size:0.9rem; margin-top:0.25rem;">
+                        If you don't select specific accounts above, this filter controls which accounts we fetch.
+                    </div>
+                </div>
                 
                 <div style="margin-top: 2rem;">
                     <button class="btn btn-secondary" onclick="previousStep()">Back</button>
@@ -944,6 +996,13 @@ PRODUCTION_DASHBOARD = """
         let accessToken = null;
         let selectedAccounts = [];
         let userSettings = {};
+        const CSRF_TOKEN = "{{ csrf_token }}";
+
+        function csrfFetch(url, options = {}) {
+            const headers = options.headers ? { ...options.headers } : {};
+            headers['X-CSRFToken'] = CSRF_TOKEN;
+            return fetch(url, { ...options, headers });
+        }
         
         // Initialize date inputs
         document.getElementById('end-date').valueAsDate = new Date();
@@ -973,7 +1032,7 @@ PRODUCTION_DASHBOARD = """
         function connectPlaid() {
             showAlert('info', 'Connecting to Plaid...');
             
-            fetch('/api/plaid/link-token', {
+            csrfFetch('/api/plaid/link-token', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'}
             })
@@ -1013,7 +1072,7 @@ PRODUCTION_DASHBOARD = """
         }
         
         function exchangePublicToken(publicToken, metadata) {
-            fetch('/api/plaid/exchange-token', {
+            csrfFetch('/api/plaid/exchange-token', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -1086,13 +1145,19 @@ PRODUCTION_DASHBOARD = """
             }
         }
         
+        function getAccountFilter() {
+            const credit = document.getElementById('account-filter-credit');
+            return credit && credit.checked ? 'credit' : 'all';
+        }
+
         function saveSelectedAccounts() {
             if (selectedAccounts.length === 0) {
                 showAlert('warning', 'Please select at least one account');
-                return;
+                // Not a hard block—user may want to rely on filter
             }
             
             userSettings.selectedAccounts = selectedAccounts;
+            userSettings.accountFilter = getAccountFilter();
             nextStep();
         }
         
@@ -1113,7 +1178,7 @@ PRODUCTION_DASHBOARD = """
             userSettings.perDiem = parseFloat(perDiem);
             
             // Save to backend
-            fetch('/api/settings', {
+            csrfFetch('/api/settings', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(userSettings)
@@ -1141,7 +1206,7 @@ PRODUCTION_DASHBOARD = """
             document.getElementById('processing-status').innerHTML = 
                 '<div class="alert alert-info"><span class="loading-spinner"></span> Analyzing transactions...</div>';
             
-            fetch('/api/process-expenses', {
+            csrfFetch('/api/process-expenses', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -1209,7 +1274,7 @@ PRODUCTION_DASHBOARD = """
         }
         
         function exportToConcur() {
-            fetch('/api/export/concur', {
+            csrfFetch('/api/export/concur', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'}
             })
@@ -1260,6 +1325,30 @@ PRODUCTION_DASHBOARD = """
                 setTimeout(() => alert.remove(), 300);
             }, 5000);
         }
+        function importFiles() {
+            const input = document.getElementById('import-files');
+            if (!input.files || input.files.length === 0) {
+                showAlert('warning', 'Please choose one or more files to upload');
+                return;
+            }
+            const form = new FormData();
+            Array.from(input.files).forEach((f) => form.append('files', f));
+
+            csrfFetch('/api/import/upload', {
+                method: 'POST',
+                body: form
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (res.success) {
+                    showAlert('success', `Imported ${res.rows_imported} rows (duplicates skipped: ${res.duplicates}).`);
+                    nextStep();
+                } else {
+                    showAlert('danger', res.error || 'Import failed');
+                }
+            })
+            .catch(err => showAlert('danger', 'Import error: ' + err.message));
+        }
     </script>
 </body>
 </html>
@@ -1300,6 +1389,130 @@ def create_link_token():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+@app.route('/api/import/upload', methods=['POST'])
+@require_csrf
+@require_session
+@rate_limit(max_attempts=5, window_minutes=1)
+def import_upload():
+    """Import transactions from uploaded CSV/OFX/QFX files. CSV supported in this version."""
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Not authenticated'}), 401
+
+        files = request.files.getlist('files')
+        if not files:
+            return jsonify({'error': 'No files uploaded'}), 400
+
+        rows_parsed = 0
+        rows_imported = 0
+        duplicates = 0
+        errors = 0
+        filenames = []
+
+        def parse_date(val: str) -> Optional[str]:
+            if not val:
+                return None
+            val = val.strip()
+            fmts = ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y']
+            for f in fmts:
+                try:
+                    return datetime.strptime(val, f).date().isoformat()
+                except Exception:
+                    continue
+            return None
+
+        with SecureDatabase(DB_PATH) as db:
+            for f in files:
+                filename = secure_filename(f.filename or 'import.csv')
+                filenames.append(filename)
+                ext = Path(filename).suffix.lower()
+                try:
+                    if ext != '.csv':
+                        # For now, only CSV is supported in this endpoint
+                        errors += 1
+                        continue
+                    content = f.read().decode('utf-8-sig', errors='ignore')
+                    reader = csv.DictReader(io.StringIO(content))
+                    for row in reader:
+                        rows_parsed += 1
+                        # Heuristic column detection
+                        date_val = row.get('Date') or row.get('Transaction Date') or row.get('Posted Date') or row.get('Post Date')
+                        date_iso = parse_date(date_val)
+                        if not date_iso:
+                            errors += 1
+                            continue
+
+                        name = (row.get('Description') or row.get('Merchant') or row.get('Payee') or '').strip()
+                        amount_str = (row.get('Amount') or '').replace(',', '').strip()
+                        if amount_str:
+                            try:
+                                amount = float(amount_str)
+                            except Exception:
+                                errors += 1
+                                continue
+                        else:
+                            debit = (row.get('Debit') or '0').replace(',', '').strip() or '0'
+                            credit = (row.get('Credit') or '0').replace(',', '').strip() or '0'
+                            try:
+                                amount = float(debit) - float(credit)  # expenses negative
+                            except Exception:
+                                errors += 1
+                                continue
+
+                        merchant = (row.get('Merchant') or '').strip() or None
+                        city = (row.get('City') or '').strip() or None
+                        state = (row.get('State') or '').strip() or None
+                        currency = (row.get('Currency') or 'USD').strip() or 'USD'
+                        account_mask = (row.get('Account Number') or row.get('Account Mask') or '').strip()
+                        account_id = f"import:{filename}{('-' + account_mask[-4:]) if account_mask else ''}"
+
+                        # Stable synthetic transaction id
+                        tid_basis = f"{user_id}|{date_iso}|{amount:.2f}|{name}"
+                        transaction_id = hashlib.sha256(tid_basis.encode('utf-8')).hexdigest()[:32]
+
+                        # Dedupe check
+                        existing = db.select('transactions', where={'transaction_id': transaction_id, 'user_id': user_id})
+                        if existing:
+                            duplicates += 1
+                            continue
+
+                        db.insert('transactions', {
+                            'transaction_id': transaction_id,
+                            'user_id': user_id,
+                            'trip_id': None,
+                            'account_id': account_id,
+                            'amount': amount,
+                            'date': date_iso,
+                            'name': InputValidator.validate_string(name, max_length=200) if name else None,
+                            'merchant_name': InputValidator.validate_string(merchant, max_length=200) if merchant else None,
+                            'category': None,
+                            'location_city': InputValidator.validate_string(city, max_length=100) if city else None,
+                            'location_state': InputValidator.validate_string(state, max_length=32) if state else None,
+                            'iso_currency_code': currency,
+                            'pending': False
+                        })
+                        rows_imported += 1
+                except Exception as e:
+                    errors += 1
+                    continue
+
+            # Log import session
+            db.insert('import_sessions', {
+                'user_id': user_id,
+                'source': 'upload',
+                'original_filenames': ','.join(filenames),
+                'rows_parsed': rows_parsed,
+                'rows_imported': rows_imported,
+                'duplicates': duplicates,
+                'errors': errors,
+                'created_at': datetime.now().isoformat()
+            })
+
+        return jsonify({'success': True, 'rows_parsed': rows_parsed, 'rows_imported': rows_imported, 'duplicates': duplicates, 'errors': errors})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/plaid/exchange-token', methods=['POST'])
 @require_csrf
@@ -1382,14 +1595,15 @@ def save_settings():
             trip_detection_rule=TripRule(data.get('tripRule', 'out_of_state_2_days')),
             min_trip_days=2,
             per_diem_amount=per_diem,
-            selected_account_ids=data.get('selectedAccounts', [])
+            selected_account_ids=data.get('selectedAccounts', []),
+            account_filter=data.get('accountFilter', 'credit')
         )
         
         # Store in session (in production, store in database)
         session['user_settings'] = settings.to_dict()
         
         # Save to database securely
-        with SecureDatabase('expense_tracker.db') as db:
+        with SecureDatabase(DB_PATH) as db:
             # Check if user settings exist
             existing = db.select(
                 'user_settings',
@@ -1453,36 +1667,100 @@ def process_expenses():
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
         
-        access_token = session.get('plaid_access_token')
-        if not access_token:
-            return jsonify({'error': 'Not authenticated'}), 401
-        
-        # Get transactions from Plaid
-        request = TransactionsGetRequest(
-            access_token=access_token,
-            start_date=start_date,
-            end_date=end_date,
-            options={'account_ids': session.get('user_settings', {}).get('selectedAccounts', [])}
-        )
-        
-        response = plaid_client.transactions_get(request)
-        transactions = response['transactions']
-        
-        # Convert Plaid transactions to our format
+        settings_dict = session.get('user_settings', {})
+        selected_ids = settings_dict.get('selected_account_ids', []) or []
+        account_filter = settings_dict.get('account_filter', os.getenv('PLAID_ACCOUNT_FILTER', 'credit'))
+
         formatted_transactions = []
-        for trans in transactions:
-            formatted_transactions.append({
-                'transaction_id': trans['transaction_id'],
-                'account_id': trans['account_id'],
-                'amount': trans['amount'],
-                'date': datetime.strptime(trans['date'], '%Y-%m-%d').date(),
-                'name': trans['name'],
-                'merchant_name': trans.get('merchant_name'),
-                'category': trans.get('category', []),
-                'location': trans.get('location', {}),
-                'iso_currency_code': trans.get('iso_currency_code', 'USD'),
-                'pending': trans.get('pending', False)
-            })
+        access_token = session.get('plaid_access_token')
+        if access_token:
+            if selected_ids:
+                # Fetch only selected accounts directly via Plaid client
+                try:
+                    req = TransactionsGetRequest(
+                        access_token=access_token,
+                        start_date=start_date,
+                        end_date=end_date,
+                        options={'account_ids': selected_ids}
+                    )
+                    resp = plaid_client.transactions_get(req)
+                    for t in resp['transactions']:
+                        formatted_transactions.append({
+                            'transaction_id': t['transaction_id'],
+                            'account_id': t['account_id'],
+                            'amount': t['amount'],
+                            'date': datetime.strptime(t['date'], '%Y-%m-%d').date(),
+                            'name': t['name'],
+                            'merchant_name': t.get('merchant_name'),
+                            'category': t.get('category', []),
+                            'location': t.get('location', {}),
+                            'iso_currency_code': t.get('iso_currency_code', 'USD'),
+                            'pending': t.get('pending', False)
+                        })
+                except Exception as e:
+                    return jsonify({'error': f'Plaid fetch failed: {e}'}), 500
+            else:
+                # Use integration helper with filter toggle
+                try:
+                    txns = get_plaid_transactions(access_token, datetime.combine(start_date, datetime.min.time()), datetime.combine(end_date, datetime.min.time()), filter_mode=account_filter)
+                    for t in (txns or []):
+                        # Convert to our format
+                        loc = t.get('location')
+                        city = None
+                        region = None
+                        if isinstance(loc, str) and loc:
+                            parts = [p.strip() for p in loc.split(',')]
+                            if len(parts) >= 2:
+                                city, region = parts[0], parts[-1]
+                            else:
+                                region = parts[0]
+                        elif isinstance(loc, dict):
+                            city = loc.get('city')
+                            region = loc.get('region')
+                        name = t.get('name') or t.get('description') or (t.get('merchant_name') or '')
+                        date_val = t.get('date')
+                        date_obj = datetime.fromisoformat(date_val).date() if isinstance(date_val, str) else date_val
+                        formatted_transactions.append({
+                            'transaction_id': t.get('transaction_id'),
+                            'account_id': t.get('account_id'),
+                            'amount': t.get('amount'),
+                            'date': date_obj,
+                            'name': name,
+                            'merchant_name': t.get('merchant_name'),
+                            'category': t.get('plaid_category', []),
+                            'location': {'city': city, 'region': region},
+                            'iso_currency_code': t.get('iso_currency_code', 'USD'),
+                            'pending': False
+                        })
+                except Exception as e:
+                    return jsonify({'error': f'Plaid fetch failed: {e}'}), 500
+        else:
+            # DB fallback from imported transactions
+            with SecureDatabase(DB_PATH) as db:
+                cursor = db.execute(
+                    """
+                    SELECT transaction_id, account_id, amount, date, name, merchant_name,
+                           category, location_city, location_state, iso_currency_code, pending
+                    FROM transactions
+                    WHERE user_id = ? AND date BETWEEN ? AND ?
+                    """,
+                    [session.get('user_id'), start_date.isoformat(), end_date.isoformat()]
+                )
+                rows = cursor.fetchall()
+                for r in rows:
+                    date_obj = datetime.strptime(r[3], '%Y-%m-%d').date() if isinstance(r[3], str) else r[3]
+                    formatted_transactions.append({
+                        'transaction_id': r[0],
+                        'account_id': r[1],
+                        'amount': r[2],
+                        'date': date_obj,
+                        'name': r[4] or '',
+                        'merchant_name': r[5],
+                        'category': json.loads(r[6]) if r[6] else [],
+                        'location': {'city': r[7], 'region': r[8]},
+                        'iso_currency_code': r[9] or 'USD',
+                        'pending': bool(r[10])
+                    })
         
         # Load user settings
         settings_dict = session.get('user_settings', {})
@@ -1493,7 +1771,7 @@ def process_expenses():
         trips = detector.detect_trips(formatted_transactions)
         
         # Save trips to database securely
-        with SecureDatabase('expense_tracker.db') as db:
+        with SecureDatabase(DB_PATH) as db:
         
             for trip in trips:
                 trip_data = {
@@ -1600,7 +1878,7 @@ def submit_to_concur(trip_id):
             return jsonify({'error': 'Invalid trip ID'}), 400
         
         # Get trip from database with user validation
-        with SecureDatabase('expense_tracker.db') as db:
+        with SecureDatabase(DB_PATH) as db:
             trips = db.select(
                 'trips',
                 where={'trip_id': trip_id, 'user_id': user_id}
@@ -1679,7 +1957,7 @@ def export_concur():
             return jsonify({'error': 'Not authenticated'}), 401
         
         # Get trips from database with user filtering
-        with SecureDatabase('expense_tracker.db') as db:
+        with SecureDatabase(DB_PATH) as db:
             # Use parameterized query for user filtering
             cursor = db.execute(
                 """
@@ -1749,6 +2027,7 @@ def export_concur():
 
 
 if __name__ == '__main__':
+    init_database()
     print("=" * 60)
     print("🚀 PRODUCTION TRAVEL EXPENSE MANAGEMENT SYSTEM")
     print("=" * 60)
@@ -1766,9 +2045,6 @@ if __name__ == '__main__':
     print("\n🌐 Open: http://localhost:8080")
     print("\nPress Ctrl+C to stop")
     print("-" * 60)
-    
-    # Initialize database
-    init_database()
     print("✅ Database initialized")
     
     # Check Plaid configuration
