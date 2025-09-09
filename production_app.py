@@ -892,9 +892,9 @@ PRODUCTION_DASHBOARD = """
                     <label class="form-label">Home State</label>
                     <select class="form-control form-select" id="home-state">
                         <option value="">Select your home state...</option>
-                        ${Object.entries(US_STATES).map(([code, name]) => 
-                            `<option value="${code}">${name}</option>`
-                        ).join('')}
+                        {% for code, name in states.items() %}
+                            <option value="{{ code }}">{{ name }}</option>
+                        {% endfor %}
                     </select>
                 </div>
                 
@@ -1472,6 +1472,30 @@ def import_upload():
                         tid_basis = f"{user_id}|{date_iso}|{amount:.2f}|{name}"
                         transaction_id = hashlib.sha256(tid_basis.encode('utf-8')).hexdigest()[:32]
 
+                        # Infer city/state from description if missing (e.g., "MARRIOTT HOTEL SEATTLE WA")
+                        if (not city or not state) and name:
+                            try:
+                                # Look for trailing "... CITY STATE" where STATE is 2-letter code
+                                name_clean = re.sub(r"[^A-Za-z\s]", " ", name).strip()
+                                parts = name_clean.split()
+                                if len(parts) >= 2 and parts[-1].isalpha() and len(parts[-1]) == 2:
+                                    state_candidate = parts[-1].upper()
+                                    if state_candidate in US_STATES:
+                                        state = state or state_candidate
+                                        # Take up to last two tokens for city (handles "LOS ANGELES")
+                                        city_tokens = []
+                                        # Collect tokens before state until a vendor keyword boundary seems likely
+                                        # Simplify: take last two tokens before state
+                                        if len(parts) >= 3:
+                                            city_tokens = parts[-3:-1]
+                                        else:
+                                            city_tokens = parts[-2:-1]
+                                        if city_tokens:
+                                            city_guess = " ".join(city_tokens).title()
+                                            city = city or city_guess
+                            except Exception:
+                                pass
+
                         # Dedupe check
                         existing = db.select('transactions', where={'transaction_id': transaction_id, 'user_id': user_id})
                         if existing:
@@ -1826,7 +1850,14 @@ def process_expenses():
                         where={'transaction_id': trans.get('transaction_id'), 'user_id': user_id}
                     )
                     
-                    if not existing_trans:
+                    if existing_trans:
+                        # Ensure the existing transaction is linked to this trip
+                        db.update(
+                            'transactions',
+                            {'trip_id': trip.trip_id},
+                            where={'transaction_id': trans.get('transaction_id'), 'user_id': user_id}
+                        )
+                    else:
                         db.insert('transactions', trans_data)
         
         # Prepare response
